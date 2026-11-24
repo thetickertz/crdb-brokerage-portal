@@ -31,7 +31,10 @@ button,input,select{font:inherit}
 #login{min-height:100%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--gd),#2e7a3a 60%,var(--g));padding:20px}
 .login-card{background:#fff;border-radius:14px;padding:34px 30px;width:100%;max-width:380px;box-shadow:0 20px 50px rgba(0,0,0,.25)}
 .brand{display:flex;align-items:center;gap:10px;margin-bottom:22px}
-.logo{width:44px;height:40px;border-radius:9px;background:var(--g);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:13px;letter-spacing:.3px}
+.logo-img{height:46px;width:auto;display:block;padding-right:12px;border-right:1px solid var(--line)}
+header .logo-img{height:30px;border-right-color:rgba(255,255,255,.35)}
+.login-card .brand{flex-direction:column;align-items:center;text-align:center;gap:8px}
+.login-card .logo-img{height:58px;padding-right:0;border-right:0}
 .brand b{display:block;font-size:17px;color:var(--gd)}
 .brand span{font-size:12px;color:var(--mute)}
 label{display:block;font-weight:600;font-size:13px;margin:12px 0 5px}
@@ -46,6 +49,8 @@ input:focus,select:focus{outline:2px solid var(--g);outline-offset:-1px;border-c
 .btn.danger:hover{background:var(--badbg)}
 .btn.sm{padding:4px 10px;font-size:12.5px}
 .btn.block{width:100%;justify-content:center;margin-top:20px;padding:11px}
+.link{background:none;border:0;padding:0;color:var(--gd);font-weight:600;cursor:pointer;text-decoration:underline}
+.login-card h2{margin:0 0 6px;font-size:18px;color:var(--gd)}
 .msg{margin-top:12px;padding:9px 12px;border-radius:8px;font-size:13px}
 .msg.bad{background:var(--badbg);color:var(--bad)}
 .msg.ok{background:var(--gl);color:var(--gd)}
@@ -112,21 +117,38 @@ tfoot td{font-weight:700;background:#f6f9f6;position:sticky;bottom:0}
 <!-- ============ LOGIN ============ -->
 <section id="login" class="hidden">
   <form class="login-card" id="loginForm" autocomplete="on">
-    <div class="brand"><div class="logo">CRDB</div><div><b>Brokerage Portal</b><span>Trial balance &amp; reconciliation</span></div></div>
+    <div class="brand"><img class="logo-img" src="assets/crdb-logo.png" alt="CRDB Bank"><div><b>Brokerage Portal</b><span>Trial balance &amp; reconciliation</span></div></div>
     <label for="lu">Username</label>
     <input id="lu" type="text" autocomplete="username" required>
     <label for="lp">Password</label>
     <input id="lp" type="password" autocomplete="current-password" required>
     <button class="btn block" id="loginBtn" type="submit">Sign in</button>
     <div id="loginMsg"></div>
-    <p class="muted" style="margin-top:18px">Forgot your password? Ask a portal administrator to reset it.</p>
+    <p class="muted" style="margin-top:18px">New user, or forgot your password? <button type="button" class="link" id="toPin">Set password with PIN</button></p>
+  </form>
+  <form class="login-card hidden" id="pinForm" autocomplete="off">
+    <div class="brand"><img class="logo-img" src="assets/crdb-logo.png" alt="CRDB Bank"><div><b>Brokerage Portal</b><span>Trial balance &amp; reconciliation</span></div></div>
+    <h2>Set your password</h2>
+    <p class="muted">Enter the 6-digit PIN from your email. No PIN, or it has expired? Enter your username and click <b>Email me a PIN</b>.</p>
+    <label for="pu">Username</label>
+    <div class="row" style="flex-wrap:nowrap"><input id="pu" type="text" autocomplete="username" required style="flex:1"><button type="button" class="btn ghost" id="pinSend">Email me a PIN</button></div>
+    <label for="pp">PIN</label>
+    <input id="pp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 digits" required>
+    <label for="pn1">New password</label>
+    <input id="pn1" type="password" autocomplete="new-password" required>
+    <label for="pn2">Confirm new password</label>
+    <input id="pn2" type="password" autocomplete="new-password" required>
+    <p class="muted">At least 8 characters, with letters and numbers.</p>
+    <button class="btn block" id="pinBtn" type="submit">Set password and sign in</button>
+    <div id="pinMsg"></div>
+    <p class="muted" style="margin-top:18px"><button type="button" class="link" id="toLogin">← Back to sign in</button></p>
   </form>
 </section>
 
 <!-- ============ APP ============ -->
 <div id="app" class="hidden">
   <header>
-    <div class="brand"><div class="logo">CRDB</div><div><b>Brokerage Portal</b><span>Trial balance &amp; reconciliation</span></div></div>
+    <div class="brand"><img class="logo-img" src="assets/crdb-logo-white.png" alt="CRDB Bank"><div><b>Brokerage Portal</b><span>Trial balance &amp; reconciliation</span></div></div>
     <div class="who"><span id="whoName"></span>
       <button class="btn ghost sm" id="pwBtn" type="button">Change password</button>
       <button class="btn ghost sm" id="outBtn" type="button">Sign out</button>
@@ -153,7 +175,11 @@ const store = {
 const fmt = n => (typeof n === 'number' && isFinite(n)) ? n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : esc(n);
 const keyOf = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
 
-const S = { token: store.get('bp_token'), user: null, modules: [], view: 'dashboard', mod: null, tab: 'manual' };
+const S = { token: store.get('bp_token'), user: null, modules: [], view: 'dashboard', mod: null, tab: 'manual', auditUser: '' };
+const ROLE_LABEL = { master: 'Master admin', admin: 'Administrator', user: 'User' };
+const isAdmin = () => !!S.user && (S.user.role === 'admin' || S.user.role === 'master');
+const isMaster = () => !!S.user && S.user.role === 'master';
+const strongPw = p => p.length >= 8 && /[A-Za-z]/.test(p) && /[0-9]/.test(p);
 
 let busyCount = 0;
 function busy(on) {
@@ -311,8 +337,53 @@ function cleanRow(mod, src) {
 function showLogin() {
   $('#app').classList.add('hidden');
   $('#login').classList.remove('hidden');
-  setTimeout(() => $('#lu').focus(), 50);
+  showPinForm(false);
 }
+
+function showPinForm(show) {
+  $('#loginForm').classList.toggle('hidden', show);
+  $('#pinForm').classList.toggle('hidden', !show);
+  $('#loginMsg').innerHTML = ''; $('#pinMsg').innerHTML = '';
+  if (show) {
+    if (!$('#pu').value && $('#lu').value.trim()) $('#pu').value = $('#lu').value.trim();
+    setTimeout(() => ($('#pu').value ? $('#pp') : $('#pu')).focus(), 50);
+  } else setTimeout(() => $('#lu').focus(), 50);
+}
+
+$('#toPin').onclick = () => showPinForm(true);
+$('#toLogin').onclick = () => showPinForm(false);
+
+$('#pinSend').onclick = async () => {
+  const u = $('#pu').value.trim(), m = $('#pinMsg'), b = $('#pinSend');
+  if (!u) { m.innerHTML = '<div class="msg bad">Enter your username first.</div>'; $('#pu').focus(); return; }
+  b.disabled = true; b.textContent = 'Sending…';
+  try {
+    const r = await api('requestPin', { username: u });
+    m.innerHTML = '<div class="msg ok">' + esc(r.message) + '</div>';
+    $('#pp').focus();
+  } catch (err) { m.innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; }
+  finally { b.disabled = false; b.textContent = 'Email me a PIN'; }
+};
+
+$('#pinForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const m = $('#pinMsg'), btn = $('#pinBtn'), p1 = $('#pn1').value, p2 = $('#pn2').value;
+  m.innerHTML = '';
+  if (!/^\d{6}$/.test($('#pp').value.trim())) { m.innerHTML = '<div class="msg bad">The PIN is the 6 digits from the email.</div>'; return; }
+  if (p1 !== p2) { m.innerHTML = '<div class="msg bad">The new passwords do not match.</div>'; return; }
+  if (!strongPw(p1)) { m.innerHTML = '<div class="msg bad">Use at least 8 characters with letters and numbers.</div>'; return; }
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const r = await api('setPasswordWithPin', { username: $('#pu').value.trim(), pin: $('#pp').value.trim(), newPassword: p1 });
+    ['#pp', '#pn1', '#pn2'].forEach(s => { $(s).value = ''; });
+    S.token = r.token; store.set('bp_token', r.token);
+    S.user = r.user; S.modules = r.modules;
+    showPinForm(false);
+    enterApp();
+    toast('Password set. Welcome, ' + r.user.name + '!');
+  } catch (err) { m.innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; }
+  finally { btn.disabled = false; btn.textContent = 'Set password and sign in'; }
+});
 
 function signOutLocal() {
   S.token = null; S.user = null;
@@ -359,7 +430,7 @@ function changePassword(forced) {
         e.preventDefault();
         const p0 = $('#pw0').value, p1 = $('#pw1').value, p2 = $('#pw2').value, m = $('#pwMsg');
         if (p1 !== p2) { m.innerHTML = '<div class="msg bad">The new passwords do not match.</div>'; return; }
-        if (p1.length < 8 || !/[A-Za-z]/.test(p1) || !/[0-9]/.test(p1)) { m.innerHTML = '<div class="msg bad">Use at least 8 characters with letters and numbers.</div>'; return; }
+        if (!strongPw(p1)) { m.innerHTML = '<div class="msg bad">Use at least 8 characters with letters and numbers.</div>'; return; }
         try {
           const r = await api('changePassword', { oldPassword: p0, newPassword: p1 });
           S.user = r.user; close(); toast('Password changed.'); render();
@@ -371,7 +442,7 @@ function changePassword(forced) {
 function enterApp() {
   $('#login').classList.add('hidden');
   $('#app').classList.remove('hidden');
-  $('#whoName').textContent = S.user.name + (S.user.role === 'admin' ? ' · Admin' : '');
+  $('#whoName').textContent = S.user.name + (isAdmin() ? ' · ' + ROLE_LABEL[S.user.role] : '');
   if (S.user.mustChange) changePassword(true);
   go('dashboard');
 }
@@ -382,7 +453,7 @@ function renderNav() {
     ((S.view === view && (S.mod || '') === (mod || '')) ? 'on' : '') + '">' + esc(label) + '</button>';
   let h = b('dashboard', '', 'Dashboard') + '<h6>Inputs</h6>';
   S.modules.forEach(m => { h += b('module', m.key, m.title); });
-  if (S.user.role === 'admin') h += '<h6>Administration</h6>' + b('users', '', 'Users') + b('audit', '', 'Audit log');
+  if (isAdmin()) h += '<h6>Administration</h6>' + b('users', '', 'Users') + b('audit', '', 'Audit log');
   const nav = $('#nav');
   nav.innerHTML = h;
   nav.querySelectorAll('button').forEach(btn => { btn.onclick = () => go(btn.dataset.v, btn.dataset.m || null); });
@@ -562,14 +633,14 @@ async function tabRecords(tab, m) {
   let r;
   try { r = await api('list', { module: m.key }); } catch (err) { tab.innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; return; }
   if (S.view !== 'module' || S.mod !== m.key || S.tab !== 'records') return;
-  const isAdmin = S.user.role === 'admin';
+  const canDelete = isAdmin();
   const all = r.rows;
   const batches = {};
   all.forEach(x => { if (x._batch) { batches[x._batch] = batches[x._batch] || { n: 0, at: x._createdAt, by: x._createdBy }; batches[x._batch].n++; } });
   const cols = m.columns.map(c => c.name);
   tab.innerHTML = '<div class="card"><div class="row"><input type="search" id="q" placeholder="Search records…" style="max-width:320px">' +
     '<span class="muted" id="cnt"></span><span class="spacer"></span><button class="btn ghost" id="exp">Export CSV</button></div>' +
-    (isAdmin && Object.keys(batches).length ? '<div class="row" style="margin-top:12px"><select id="bsel" style="max-width:460px"><option value="">Delete a whole upload…</option>' +
+    (canDelete && Object.keys(batches).length ? '<div class="row" style="margin-top:12px"><select id="bsel" style="max-width:460px"><option value="">Delete a whole upload…</option>' +
       Object.keys(batches).map(b => '<option value="' + esc(b) + '">' + esc(b) + ' — ' + batches[b].n + ' rows by ' + esc(batches[b].by) + ' at ' + esc(batches[b].at) + '</option>').join('') +
       '</select><button class="btn danger sm" id="bdel">Delete upload</button></div>' : '') +
     (r.total > all.length ? '<div class="msg warn">Showing the latest ' + all.length.toLocaleString() + ' of ' + r.total.toLocaleString() + ' records.</div>' : '') +
@@ -583,10 +654,10 @@ async function tabRecords(tab, m) {
     $('#cnt').textContent = shown.length.toLocaleString() + ' record(s)' + (shown.length > 1000 ? ' — first 1,000 shown; Export CSV includes all' : '');
     $('#tw').innerHTML = !shown.length ? '<p class="muted" style="padding:14px">No records.</p>' :
       '<table><thead><tr>' + m.columns.map(c => '<th class="' + (c.type === 'number' ? 'num' : '') + '">' + esc(c.name) + '</th>').join('') +
-      '<th>Entered by</th><th>Entered at</th>' + (isAdmin ? '<th></th>' : '') + '</tr></thead><tbody>' +
+      '<th>Entered by</th><th>Entered at</th>' + (canDelete ? '<th></th>' : '') + '</tr></thead><tbody>' +
       lim.map(x => '<tr>' + m.columns.map(c => '<td class="' + (c.type === 'number' ? 'num' : '') + '">' + (c.type === 'number' && x[c.name] !== '' ? fmt(Number(x[c.name])) : esc(x[c.name])) + '</td>').join('') +
-        '<td>' + esc(x._createdBy) + '</td><td>' + esc(x._createdAt) + '</td>' + (isAdmin ? '<td><button class="btn danger sm" data-id="' + esc(x._id) + '">Delete</button></td>' : '') + '</tr>').join('') +
-      '</tbody>' + (nums.length ? '<tfoot><tr>' + m.columns.map((c, i) => '<td class="num">' + (c.type === 'number' && c.sum !== false ? fmt(shown.reduce((s, x) => s + (Number(x[c.name]) || 0), 0)) : (i === 0 ? 'Total' : '')) + '</td>').join('') + '<td></td><td></td>' + (isAdmin ? '<td></td>' : '') + '</tr></tfoot>' : '') + '</table>';
+        '<td>' + esc(x._createdBy) + '</td><td>' + esc(x._createdAt) + '</td>' + (canDelete ? '<td><button class="btn danger sm" data-id="' + esc(x._id) + '">Delete</button></td>' : '') + '</tr>').join('') +
+      '</tbody>' + (nums.length ? '<tfoot><tr>' + m.columns.map((c, i) => '<td class="num">' + (c.type === 'number' && c.sum !== false ? fmt(shown.reduce((s, x) => s + (Number(x[c.name]) || 0), 0)) : (i === 0 ? 'Total' : '')) + '</td>').join('') + '<td></td><td></td>' + (canDelete ? '<td></td>' : '') + '</tr></tfoot>' : '') + '</table>';
     $('#tw').querySelectorAll('[data-id]').forEach(b => {
       b.onclick = async () => {
         if (!(await confirmBox('Delete record', 'Delete this record permanently? This is recorded in the audit log.', 'Delete'))) return;
@@ -607,31 +678,63 @@ async function tabRecords(tab, m) {
 }
 
 /* ---------------- admin: users ---------------- */
-function showTemp(title, username, temp) {
-  modal('<h2>' + esc(title) + '</h2><p>Username: <b>' + esc(username) + '</b><br>Temporary password:</p><div class="secret">' + esc(temp) + '</div>' +
-    '<p class="muted">Shown only once. Send the username and the password through different channels (e.g. email + SMS). The user must change it at first sign-in.</p>' +
-    '<div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn ghost" id="cp">Copy password</button><button class="btn" id="ok">Done</button></div>',
+function showPin(title, r) {
+  const body = r.emailed
+    ? '<p>A 6-digit PIN was emailed to <b>' + esc(r.email) + '</b> for user <b>' + esc(r.username) + '</b>. It is valid for ' + esc(r.hours) + ' hours.</p>' +
+      '<p class="muted">They open the portal, click <b>Set password with PIN</b> and choose their own password. If the email does not arrive, ask them to check spam, or click <b>Send PIN</b> again.</p>'
+    : '<div class="msg warn">The email could not be sent' + (r.email ? ' to ' + esc(r.email) : ' (no email on file)') + '. Give this PIN to <b>' + esc(r.username) +
+      '</b> privately, e.g. by phone. It is valid for ' + esc(r.hours) + ' hours.</div><div class="secret">' + esc(r.pin) + '</div>' +
+      '<p class="muted">They open the portal, click <b>Set password with PIN</b> and choose their own password.</p>';
+  modal('<h2>' + esc(title) + '</h2>' + body + '<div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn" id="ok">Done</button></div>',
+    (o, close) => { o.querySelector('#ok').onclick = close; });
+}
+
+function editEmail(username, current) {
+  modal('<h2>Change email</h2><p>Work email for <b>' + esc(username) + '</b>. PINs are sent to this address.</p>' +
+    '<form id="eForm"><input type="email" id="ee" required value="' + esc(current) + '"><div id="eMsg"></div>' +
+    '<div class="row" style="justify-content:flex-end;margin-top:14px"><button type="button" class="btn ghost" id="eCancel">Cancel</button><button class="btn" type="submit">Save email</button></div></form>',
     (o, close) => {
-      o.querySelector('#ok').onclick = close;
-      o.querySelector('#cp').onclick = () => { try { navigator.clipboard.writeText(temp).then(() => toast('Copied.')); } catch (e) { toast('Select the password and copy it.', 'bad'); } };
+      o.querySelector('#eCancel').onclick = close;
+      o.querySelector('#ee').focus();
+      o.querySelector('#eForm').onsubmit = async e => {
+        e.preventDefault();
+        try { await api('setUserEmail', { username: username, email: o.querySelector('#ee').value.trim() }); close(); toast('Email updated.'); loadUsers(); }
+        catch (err) { o.querySelector('#eMsg').innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; }
+      };
     });
 }
 
 async function viewUsers(main) {
-  main.innerHTML = '<h1>Users</h1><p class="sub">Create accounts, reset passwords and switch access on or off.</p>' +
-    '<form class="card" id="uForm"><div class="form"><div><label>Username</label><input id="un" type="text" placeholder="e.g. knjelekela" required></div>' +
-    '<div><label>Full name</label><input id="uf" type="text" required></div><div><label>Role</label><select id="ur"><option value="user">User</option><option value="admin">Administrator</option></select></div></div>' +
-    '<div id="uMsg"></div><button class="btn" type="submit" style="margin-top:14px">Create user</button></form><div class="card" id="uList"><p class="muted">Loading…</p></div>';
+  main.innerHTML = '<h1>Users</h1><p class="sub">' + (isMaster()
+      ? 'Create accounts, send password PINs and switch access on or off — for users and administrators.'
+      : 'Create user accounts, send password PINs and switch access on or off. Administrator accounts are managed by the master administrator.') + '</p>' +
+    '<form class="card" id="uForm"><div class="form">' +
+    '<div><label for="un">Username</label><input id="un" type="text" placeholder="e.g. jmushi" required></div>' +
+    '<div><label for="uf">Full name</label><input id="uf" type="text" required></div>' +
+    '<div><label for="ue">Work email</label><input id="ue" type="email" placeholder="name@company" required></div>' +
+    '<div><label for="ur">Role</label><select id="ur"><option value="user">User</option>' + (isMaster() ? '<option value="admin">Administrator</option>' : '') + '</select></div></div>' +
+    '<p class="muted">The new person receives an email with a 6-digit PIN to set their own password.</p>' +
+    '<div id="uMsg"></div><button class="btn" id="uBtn" type="submit" style="margin-top:6px">Create user &amp; email PIN</button></form>' +
+    '<div class="card" id="uList"><p class="muted">Loading…</p></div>';
   $('#uForm').onsubmit = async e => {
     e.preventDefault();
+    const btn = $('#uBtn');
+    btn.disabled = true;
     try {
-      const r = await api('addUser', { username: $('#un').value, name: $('#uf').value, role: $('#ur').value });
+      const r = await api('addUser', { username: $('#un').value, name: $('#uf').value, email: $('#ue').value, role: $('#ur').value });
       $('#uForm').reset(); $('#uMsg').innerHTML = '';
-      showTemp('User created', r.username, r.tempPassword);
+      showPin('User created', r);
       loadUsers();
     } catch (err) { $('#uMsg').innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; }
+    finally { btn.disabled = false; }
   };
   loadUsers();
+}
+
+function statusPill(u) {
+  if (!u.active) return '<span class="pill bad">Disabled</span>';
+  if (!u.lastLogin) return '<span class="pill mute">' + (u.pinPending ? 'PIN sent · awaiting first sign-in' : 'Awaiting first sign-in') + '</span>';
+  return '<span class="pill ok">Active</span>' + (u.pinPending ? ' <span class="pill mute">PIN sent</span>' : '');
 }
 
 async function loadUsers() {
@@ -639,42 +742,101 @@ async function loadUsers() {
   try {
     const r = await api('listUsers');
     if (S.view !== 'users') return;
-    box.innerHTML = '<div class="tbl-wrap"><table><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Status</th><th>Last sign-in</th><th></th></tr></thead><tbody>' +
-      r.users.map(u => '<tr><td>' + esc(u.username) + '</td><td>' + esc(u.name) + '</td><td>' + esc(u.role) + '</td><td>' +
-        (u.active ? (u.mustChange ? '<span class="pill mute">Awaiting first sign-in</span>' : '<span class="pill ok">Active</span>') : '<span class="pill bad">Disabled</span>') +
-        '</td><td>' + esc(u.lastLogin || '—') + '</td><td class="row">' +
-        '<button class="btn ghost sm" data-reset="' + esc(u.username) + '">Reset password</button>' +
-        (u.username !== S.user.username ? '<button class="btn ' + (u.active ? 'danger' : 'ghost') + ' sm" data-act="' + esc(u.username) + '" data-on="' + (u.active ? '0' : '1') + '">' + (u.active ? 'Disable' : 'Enable') + '</button>' : '') +
-        '</td></tr>').join('') + '</tbody></table></div>';
-    box.querySelectorAll('[data-reset]').forEach(b => {
+    const order = { master: 0, admin: 1, user: 2 };
+    const users = r.users.slice().sort((a, b) => (order[a.role] - order[b.role]) || a.username.localeCompare(b.username));
+    const byName = {};
+    users.forEach(u => { byName[u.username] = u; });
+    box.innerHTML = '<div class="tbl-wrap"><table><thead><tr><th>Username</th><th>Name</th><th>Work email</th><th>Role</th><th>Status</th><th>Last sign-in</th><th></th></tr></thead><tbody>' +
+      users.map(u => {
+        const me = u.username === S.user.username;
+        let acts = '';
+        if (u.canManage) {
+          if (u.active) acts += '<button class="btn ghost sm" data-pin="' + esc(u.username) + '">Send PIN</button>';
+          acts += '<button class="btn ghost sm" data-email="' + esc(u.username) + '">Email</button>';
+          if (!me) acts += '<button class="btn ' + (u.active ? 'danger' : 'ghost') + ' sm" data-act="' + esc(u.username) + '" data-on="' + (u.active ? '0' : '1') + '">' + (u.active ? 'Disable' : 'Enable') + '</button>';
+          if (isMaster() && !me && u.role !== 'master') acts += '<button class="btn ghost sm" data-role="' + esc(u.username) + '" data-to="' + (u.role === 'admin' ? 'user' : 'admin') + '">' + (u.role === 'admin' ? 'Make user' : 'Make admin') + '</button>';
+          acts += '<button class="btn ghost sm" data-log="' + esc(u.username) + '">Activity</button>';
+        } else acts = '<span class="muted">Managed by the master admin</span>';
+        return '<tr><td>' + esc(u.username) + (me ? ' <span class="muted">(you)</span>' : '') + '</td><td>' + esc(u.name) + '</td><td>' + esc(u.email || '—') + '</td><td>' +
+          esc(ROLE_LABEL[u.role] || u.role) + '</td><td>' + statusPill(u) + '</td><td>' + esc(u.lastLogin || '—') + '</td><td><div class="row" style="gap:6px;flex-wrap:nowrap">' + acts + '</div></td></tr>';
+      }).join('') + '</tbody></table></div>';
+    box.querySelectorAll('[data-pin]').forEach(b => {
       b.onclick = async () => {
-        if (!(await confirmBox('Reset password', 'Give ' + b.dataset.reset + ' a new temporary password? Their current password stops working.', 'Reset'))) return;
-        try { const x = await api('resetPassword', { username: b.dataset.reset }); showTemp('Password reset', x.username, x.tempPassword); loadUsers(); } catch (err) { toast(err.message, 'bad'); }
+        const u = byName[b.dataset.pin];
+        if (!(await confirmBox('Send PIN', 'Email a new 6-digit PIN to ' + u.username + (u.email ? ' (' + u.email + ')' : '') +
+          ' so they can set a new password? Their current password keeps working until they do. This also clears a "too many attempts" lock.', 'Send PIN'))) return;
+        try { const x = await api('sendPin', { username: u.username }); showPin('PIN sent', x); loadUsers(); } catch (err) { toast(err.message, 'bad'); }
       };
     });
+    box.querySelectorAll('[data-email]').forEach(b => { b.onclick = () => editEmail(b.dataset.email, byName[b.dataset.email].email); });
     box.querySelectorAll('[data-act]').forEach(b => {
       b.onclick = async () => {
-        try { await api('setUserActive', { username: b.dataset.act, active: b.dataset.on === '1' }); toast('Updated.'); loadUsers(); } catch (err) { toast(err.message, 'bad'); }
+        const on = b.dataset.on === '1';
+        if (!on && !(await confirmBox('Disable account', 'Disable ' + b.dataset.act + '? They are signed out at once and cannot sign in until enabled again.', 'Disable'))) return;
+        try { await api('setUserActive', { username: b.dataset.act, active: on }); toast(on ? 'Account enabled.' : 'Account disabled.'); loadUsers(); } catch (err) { toast(err.message, 'bad'); }
       };
     });
+    box.querySelectorAll('[data-role]').forEach(b => {
+      b.onclick = async () => {
+        const to = b.dataset.to;
+        if (!(await confirmBox('Change role', 'Make ' + b.dataset.role + ' ' + (to === 'admin' ? 'an Administrator' : 'a regular User') + '?', 'Change role'))) return;
+        try { await api('setUserRole', { username: b.dataset.role, role: to }); toast('Role changed.'); loadUsers(); } catch (err) { toast(err.message, 'bad'); }
+      };
+    });
+    box.querySelectorAll('[data-log]').forEach(b => { b.onclick = () => { S.auditUser = b.dataset.log; go('audit'); }; });
   } catch (err) { box.innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; }
 }
 
 /* ---------------- admin: audit ---------------- */
+const ACTION_LABEL = {
+  login: 'Signed in', loginFailed: 'Failed sign-in', logout: 'Signed out', changePassword: 'Changed password',
+  setPasswordWithPin: 'Set password with PIN', pinRequested: 'Requested a PIN by email', pinRequestIgnored: 'PIN request ignored',
+  pinFailed: 'Wrong PIN', sendPin: 'Sent a PIN', resetPassword: 'Reset password', addUser: 'Created user',
+  activateUser: 'Enabled user', deactivateUser: 'Disabled user', setRole: 'Changed role', setEmail: 'Changed email',
+  addRow: 'Added record', upload: 'Uploaded file', deleteRow: 'Deleted record', deleteBatch: 'Deleted upload',
+  createFirstAdmin: 'Master admin set up', resetAdminPassword: 'Master admin PIN issued', emailFailed: 'Email failed'
+};
+
 async function viewAudit(main) {
-  main.innerHTML = '<h1>Audit log</h1><p class="sub">The latest 300 actions in the portal.</p><div class="card" id="aList"><p class="muted">Loading…</p></div>';
-  try {
-    const r = await api('audit');
-    if (S.view !== 'audit') return;
-    $('#aList').innerHTML = '<div class="tbl-wrap"><table><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Input</th><th>Detail</th></tr></thead><tbody>' +
-      r.entries.map(x => '<tr><td>' + esc(x.time) + '</td><td>' + esc(x.username) + '</td><td>' + esc(x.action) + '</td><td>' + esc(x.module) + '</td><td>' + esc(x.detail) + '</td></tr>').join('') +
-      '</tbody></table></div>';
-  } catch (err) { $('#aList').innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; }
+  main.innerHTML = '<h1>Audit log</h1><p class="sub">' + (isMaster()
+      ? 'Every action in the portal, by every user and administrator. Pick a user to see what they did and what was done to their account (latest 500 matching entries).'
+      : 'Actions by regular users (latest 500 matching entries). Administrator activity is visible to the master administrator.') + '</p>' +
+    '<div class="card"><div class="row"><select id="aUser" style="max-width:240px"><option value="">All users</option></select>' +
+    '<select id="aKind" style="max-width:240px"><option value="">All activity</option><option value="signin">Sign-ins &amp; sign-outs</option>' +
+    '<option value="access">Passwords &amp; PINs</option><option value="users">User management</option><option value="data">Data entry &amp; deletions</option></select>' +
+    '<span class="spacer"></span><span class="muted" id="aCnt"></span><button class="btn ghost" id="aExp">Export CSV</button></div>' +
+    '<div class="tbl-wrap" style="margin-top:12px" id="aList"><p class="muted" style="padding:14px">Loading…</p></div></div>';
+  const userSel = $('#aUser'), kindSel = $('#aKind');
+  let entries = [], filled = false;
+  async function load(user) {
+    $('#aList').innerHTML = '<p class="muted" style="padding:14px">Loading…</p>';
+    try {
+      const r = await api('audit', { user: user, kind: kindSel.value });
+      if (S.view !== 'audit') return;
+      if (!filled) { r.users.forEach(n => userSel.insertAdjacentHTML('beforeend', '<option value="' + esc(n) + '">' + esc(n) + '</option>')); filled = true; }
+      if (user && !Array.from(userSel.options).some(o => o.value === user)) userSel.insertAdjacentHTML('beforeend', '<option value="' + esc(user) + '">' + esc(user) + '</option>');
+      userSel.value = user;
+      entries = r.entries;
+      $('#aCnt').textContent = entries.length.toLocaleString() + (entries.length === 1 ? ' entry' : ' entries');
+      $('#aList').innerHTML = !entries.length ? '<p class="muted" style="padding:14px">No matching activity.</p>' :
+        '<table><thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Input</th><th>Detail</th></tr></thead><tbody>' +
+        entries.map(x => '<tr class="' + (x.action === 'loginFailed' || x.action === 'pinFailed' ? 'err' : '') + '"><td>' + esc(x.time) + '</td><td>' + esc(x.username) + '</td><td>' +
+          esc(ROLE_LABEL[x.role] || (x.role === 'system' ? 'System' : '—')) + '</td><td>' + esc(ACTION_LABEL[x.action] || x.action) + '</td><td>' + esc(x.module) + '</td><td>' + esc(x.detail) + '</td></tr>').join('') +
+        '</tbody></table>';
+    } catch (err) { $('#aList').innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; }
+  }
+  userSel.onchange = () => load(userSel.value);
+  kindSel.onchange = () => load(userSel.value);
+  $('#aExp').onclick = () => download('audit_log.csv', toCSV(['time', 'username', 'role', 'action', 'module', 'detail'],
+    entries.map(x => Object.assign({}, x, { action: ACTION_LABEL[x.action] || x.action }))));
+  const preset = S.auditUser || '';
+  S.auditUser = '';
+  load(preset);
 }
 
 /* ---------------- start ---------------- */
 (async function start() {
-  if (!S.token) return showLogin();
+  if (!S.token) { showLogin(); if (location.hash === '#pin') showPinForm(true); return; }
   try { const r = await api('me'); S.user = r.user; S.modules = r.modules; enterApp(); }
   catch (e) { signOutLocal(); }
 })();

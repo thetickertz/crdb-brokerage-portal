@@ -118,8 +118,8 @@ tfoot td{font-weight:700;background:#f6f9f6;position:sticky;bottom:0}
 <section id="login" class="hidden">
   <form class="login-card" id="loginForm" autocomplete="on">
     <div class="brand"><img class="logo-img" src="assets/crdb-logo.png" alt="CRDB Bank"><div><b>Brokerage Portal</b><span>Trial balance &amp; reconciliation</span></div></div>
-    <label for="lu">Username</label>
-    <input id="lu" type="text" autocomplete="username" required>
+    <label for="lu">Username or work email</label>
+    <input id="lu" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="e.g. knjelekela or name@crdbbank.co.tz" required>
     <label for="lp">Password</label>
     <input id="lp" type="password" autocomplete="current-password" required>
     <button class="btn block" id="loginBtn" type="submit">Sign in</button>
@@ -131,8 +131,6 @@ tfoot td{font-weight:700;background:#f6f9f6;position:sticky;bottom:0}
     <div class="brand"><img class="logo-img" src="assets/crdb-logo.png" alt="CRDB Bank"><div><b>Brokerage Portal</b><span>Trial balance &amp; reconciliation</span></div></div>
     <h2 id="pinTitle">New user setup</h2>
     <p class="muted" id="pinIntro"></p>
-    <label for="pu">Username</label>
-    <input id="pu" type="text" autocomplete="username" autocapitalize="off" spellcheck="false">
     <label for="pe">Work email</label>
     <input id="pe" type="email" autocomplete="email" placeholder="name@crdbbank.co.tz">
     <button type="button" class="btn block" id="pinSend">Send me a code</button>
@@ -356,11 +354,12 @@ function showPinForm(show, mode) {
   const reset = mode === 'reset';
   $('#pinTitle').textContent = reset ? 'Reset your password' : 'New user setup';
   $('#pinIntro').textContent = reset
-    ? 'Enter your username and your work email. We will email you a 6-digit code to set a new password.'
-    : 'Enter your username and your CRDB work email. We will email you a 6-digit code to set your password.';
-  if (!$('#pu').value && $('#lu').value.trim()) $('#pu').value = $('#lu').value.trim();
+    ? 'Enter your CRDB work email. We will email you a 6-digit code to set a new password.'
+    : 'Enter your CRDB work email. We will email you a 6-digit code to set your password. Your username is made from your email automatically.';
+  const typed = $('#lu').value.trim();
+  if (!$('#pe').value && typed.indexOf('@') > 0) $('#pe').value = typed;
   setStep2(mode === 'code');
-  setTimeout(() => (!$('#pu').value ? $('#pu') : mode === 'code' ? $('#pp') : $('#pe')).focus(), 50);
+  setTimeout(() => (!$('#pe').value ? $('#pe') : mode === 'code' ? $('#pp') : $('#pinSend')).focus(), 50);
 }
 
 function setStep2(on) {
@@ -373,16 +372,15 @@ function setStep2(on) {
 $('#toSetup').onclick = () => showPinForm(true, 'setup');
 $('#toReset').onclick = () => showPinForm(true, 'reset');
 $('#toLogin').onclick = () => showPinForm(false);
-$('#haveCode').onclick = () => { setStep2(true); $('#pinMsg').innerHTML = ''; ($('#pu').value ? $('#pp') : $('#pu')).focus(); };
+$('#haveCode').onclick = () => { setStep2(true); $('#pinMsg').innerHTML = ''; ($('#pe').value ? $('#pp') : $('#pe')).focus(); };
 
 async function sendCode() {
-  const u = $('#pu').value.trim(), em = $('#pe').value.trim(), m = $('#pinMsg'), b = $('#pinSend');
-  if (!u) { m.innerHTML = '<div class="msg bad">Enter your username.</div>'; $('#pu').focus(); return; }
+  const em = $('#pe').value.trim(), m = $('#pinMsg'), b = $('#pinSend');
   if (!em) { m.innerHTML = '<div class="msg bad">Enter your work email.</div>'; $('#pe').focus(); return; }
   const label = b.textContent;
   b.disabled = true; b.textContent = 'Sending…';
   try {
-    const r = await api('requestPin', { username: u, email: em });
+    const r = await api('requestPin', { email: em });
     setStep2(true);
     m.innerHTML = '<div class="msg ok">' + esc(r.message) + '</div>';
     $('#pp').focus();
@@ -396,13 +394,13 @@ $('#pinForm').addEventListener('submit', async e => {
   if ($('#pinStep2').classList.contains('hidden')) return sendCode();   // Enter on the first step sends the code
   const m = $('#pinMsg'), btn = $('#pinBtn'), p1 = $('#pn1').value, p2 = $('#pn2').value;
   m.innerHTML = '';
-  if (!$('#pu').value.trim()) { m.innerHTML = '<div class="msg bad">Enter your username.</div>'; $('#pu').focus(); return; }
+  if (!$('#pe').value.trim()) { m.innerHTML = '<div class="msg bad">Enter your work email.</div>'; $('#pe').focus(); return; }
   if (!/^\d{6}$/.test($('#pp').value.trim())) { m.innerHTML = '<div class="msg bad">The code is the 6 digits from the email.</div>'; return; }
   if (p1 !== p2) { m.innerHTML = '<div class="msg bad">The new passwords do not match.</div>'; return; }
   if (!strongPw(p1)) { m.innerHTML = '<div class="msg bad">Use at least 8 characters with letters and numbers.</div>'; return; }
   btn.disabled = true; btn.textContent = 'Saving…';
   try {
-    const r = await api('setPasswordWithPin', { username: $('#pu').value.trim(), pin: $('#pp').value.trim(), newPassword: p1 });
+    const r = await api('setPasswordWithPin', { email: $('#pe').value.trim(), pin: $('#pp').value.trim(), newPassword: p1 });
     ['#pp', '#pn1', '#pn2'].forEach(s => { $(s).value = ''; });
     S.token = r.token; store.set('bp_token', r.token);
     S.user = r.user; S.modules = r.modules;
@@ -707,16 +705,12 @@ async function tabRecords(tab, m) {
 
 /* ---------------- admin: users ---------------- */
 function showPin(title, r) {
-  const body = r.selfSetup
-    ? '<p>Account <b>' + esc(r.username) + '</b> is ready. No email was entered, so ask the person to:</p>' +
-      '<ol><li>Open the portal and click <b>New user setup</b></li><li>Enter username <b>' + esc(r.username) + '</b> and their CRDB work email</li>' +
-      '<li>Enter the 6-digit code they receive and choose a password</li></ol>'
-    : r.emailed
+  const body = r.emailed
     ? '<p>A 6-digit code was emailed to <b>' + esc(r.email) + '</b> for user <b>' + esc(r.username) + '</b>. It is valid for ' + esc(r.hours) + ' hours.</p>' +
-      '<p class="muted">They open the portal, click <b>New user setup → I already have a code</b> and choose their own password. If the email does not arrive, ask them to check spam, or click <b>Send code</b> again.</p>'
+      '<p class="muted">They open the portal, click <b>New user setup → I already have a code</b>, enter their work email, the code and a password. Afterwards they sign in with <b>' + esc(r.username) + '</b> or their work email. If the email does not arrive, ask them to check junk, or click <b>Send code</b> again.</p>'
     : '<div class="msg warn">The email could not be sent' + (r.email ? ' to ' + esc(r.email) : ' (no email on file)') + '. Give this code to <b>' + esc(r.username) +
       '</b> privately, e.g. by phone. It is valid for ' + esc(r.hours) + ' hours.</div><div class="secret">' + esc(r.pin) + '</div>' +
-      '<p class="muted">They open the portal, click <b>New user setup → I already have a code</b> and choose their own password.</p>';
+      '<p class="muted">They open the portal, click <b>New user setup → I already have a code</b>, enter their work email (or username <b>' + esc(r.username) + '</b>), the code and a password.</p>';
   modal('<h2>' + esc(title) + '</h2>' + body + '<div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn" id="ok">Done</button></div>',
     (o, close) => { o.querySelector('#ok').onclick = close; });
 }
@@ -741,11 +735,10 @@ async function viewUsers(main) {
       ? 'Create accounts, send password codes and switch access on or off — for users and administrators.'
       : 'Create user accounts, send password codes and switch access on or off. Administrator accounts are managed by the master administrator.') + '</p>' +
     '<form class="card" id="uForm"><div class="form">' +
-    '<div><label for="un">Username</label><input id="un" type="text" placeholder="e.g. jmushi" required></div>' +
     '<div><label for="uf">Full name</label><input id="uf" type="text" required></div>' +
-    '<div><label for="ue">Work email <span class="muted">(optional)</span></label><input id="ue" type="email" placeholder="name@crdbbank.co.tz"></div>' +
+    '<div><label for="ue">Work email</label><input id="ue" type="email" placeholder="name@crdbbank.co.tz" required><div class="muted" id="unPrev" style="margin-top:4px"></div></div>' +
     '<div><label for="ur">Role</label><select id="ur"><option value="user">User</option>' + (isMaster() ? '<option value="admin">Administrator</option>' : '') + '</select></div></div>' +
-    '<p class="muted">With a work email, the person is emailed a 6-digit code right away. Without one, they use <b>New user setup</b> on the sign-in page with their username and CRDB work email.</p>' +
+    '<p class="muted">The username is made from the email (first letter + surname). The person is emailed a 6-digit code to set their password, or can use <b>New user setup</b> on the sign-in page later.</p>' +
     '<div id="uMsg"></div><button class="btn" id="uBtn" type="submit" style="margin-top:6px">Create user</button></form>' +
     '<div class="card" id="uList"><p class="muted">Loading…</p></div>';
   $('#uForm').onsubmit = async e => {
@@ -753,14 +746,27 @@ async function viewUsers(main) {
     const btn = $('#uBtn');
     btn.disabled = true;
     try {
-      const r = await api('addUser', { username: $('#un').value, name: $('#uf').value, email: $('#ue').value, role: $('#ur').value });
-      $('#uForm').reset(); $('#uMsg').innerHTML = '';
+      const r = await api('addUser', { name: $('#uf').value, email: $('#ue').value, role: $('#ur').value });
+      $('#uForm').reset(); $('#uMsg').innerHTML = ''; $('#unPrev').textContent = '';
       showPin('User created', r);
       loadUsers();
     } catch (err) { $('#uMsg').innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; }
     finally { btn.disabled = false; }
   };
+  $('#ue').oninput = () => {
+    const v = $('#ue').value.trim();
+    $('#unPrev').textContent = /^[^@\s]+@[^@\s]+$/.test(v) ? 'Username: ' + usernameFromEmail(v) + ' (a number is added if it is taken)' : '';
+  };
   loadUsers();
+}
+
+/* same rule as the server: kelvin.njelekela@… -> knjelekela */
+function usernameFromEmail(email) {
+  const parts = String(email).split('@')[0].toLowerCase().split(/[._-]+/).map(x => x.replace(/[^a-z0-9]/g, '')).filter(Boolean);
+  let base = parts.length >= 2 ? parts[0].charAt(0) + parts[parts.length - 1] : (parts[0] || '');
+  if (base.length < 3) base = parts.join('');
+  if (base.length < 3) base = base + 'user';
+  return base.slice(0, 26);
 }
 
 function statusPill(u) {

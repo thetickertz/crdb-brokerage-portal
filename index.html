@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>CRDB Brokerage Portal</title>
+
+<!-- =====================================================================
+     SETTING TO CHANGE: paste your Google Apps Script Web App URL below.
+     It looks like: https://script.google.com/macros/s/AKfy..../exec
+     ===================================================================== -->
+<script>
+  const API_URL = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+</script>
+
+<!-- Excel reader (for .xlsx uploads and Excel sample files) -->
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+
+<style>
+:root{--g:#43B02A;--gd:#215732;--gl:#eaf6e6;--bg:#f3f6f3;--card:#fff;--ink:#1c2a21;--mute:#5f6d64;--line:#dbe4dd;--bad:#b42318;--badbg:#fdecea;--warn:#8a5a00;--warnbg:#fff6e0;--r:10px}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font-family:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.45}
+button,input,select{font:inherit}
+.hidden{display:none!important}
+/* loading bar */
+#busy{position:fixed;top:0;left:0;height:3px;width:0;background:var(--g);z-index:99;transition:width .3s}
+#busy.on{width:80%;transition:width 8s cubic-bezier(.1,.7,.2,1)}
+/* login */
+#login{min-height:100%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--gd),#2e7a3a 60%,var(--g));padding:20px}
+.login-card{background:#fff;border-radius:14px;padding:34px 30px;width:100%;max-width:380px;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:22px}
+.logo{width:44px;height:40px;border-radius:9px;background:var(--g);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:13px;letter-spacing:.3px}
+.brand b{display:block;font-size:17px;color:var(--gd)}
+.brand span{font-size:12px;color:var(--mute)}
+label{display:block;font-weight:600;font-size:13px;margin:12px 0 5px}
+input[type=text],input[type=password],input[type=number],input[type=date],input[type=search],select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
+input:focus,select:focus{outline:2px solid var(--g);outline-offset:-1px;border-color:var(--g)}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--g);background:var(--g);color:#fff;padding:8px 15px;border-radius:8px;font-weight:600;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--gd);border-color:var(--gd)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.ghost{background:#fff;color:var(--gd);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--g);background:var(--gl)}
+.btn.danger{background:#fff;color:var(--bad);border-color:#f0c4bf}
+.btn.danger:hover{background:var(--badbg)}
+.btn.sm{padding:4px 10px;font-size:12.5px}
+.btn.block{width:100%;justify-content:center;margin-top:20px;padding:11px}
+.msg{margin-top:12px;padding:9px 12px;border-radius:8px;font-size:13px}
+.msg.bad{background:var(--badbg);color:var(--bad)}
+.msg.ok{background:var(--gl);color:var(--gd)}
+.msg.warn{background:var(--warnbg);color:var(--warn)}
+/* shell */
+#app{display:grid;grid-template-columns:240px 1fr;grid-template-rows:56px 1fr;min-height:100%}
+header{grid-column:1/3;background:var(--gd);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 18px}
+header .brand{margin:0}
+header .brand b{color:#fff}
+header .brand span{color:#cfe6d2}
+.who{display:flex;align-items:center;gap:12px;font-size:13px}
+.who .btn.ghost{background:transparent;color:#fff;border-color:rgba(255,255,255,.35)}
+.who .btn.ghost:hover{background:rgba(255,255,255,.1)}
+nav{background:#fff;border-right:1px solid var(--line);padding:14px 10px;overflow:auto}
+nav h6{margin:16px 10px 6px;font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--mute)}
+nav button{display:block;width:100%;text-align:left;background:none;border:0;padding:9px 12px;border-radius:8px;cursor:pointer;color:var(--ink)}
+nav button:hover{background:var(--bg)}
+nav button.on{background:var(--gl);color:var(--gd);font-weight:700;box-shadow:inset 3px 0 0 var(--g)}
+main{padding:24px 28px;overflow:auto}
+h1{font-size:21px;margin:0 0 4px;color:var(--gd)}
+.sub{color:var(--mute);margin:0 0 18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+.stat{cursor:pointer;transition:border-color .15s}
+.stat:hover{border-color:var(--g)}
+.stat h3{margin:0 0 6px;font-size:14px}
+.stat .n{font-size:26px;font-weight:700;color:var(--gd)}
+.stat .t{font-size:12.5px;color:var(--mute);margin-top:6px}
+.pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:600}
+.pill.ok{background:var(--gl);color:var(--gd)}
+.pill.bad{background:var(--badbg);color:var(--bad)}
+.pill.mute{background:var(--bg);color:var(--mute)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.spacer{flex:1}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px}
+.tabs button{background:none;border:0;padding:10px 16px;cursor:pointer;color:var(--mute);font-weight:600;border-bottom:3px solid transparent;margin-bottom:-1px}
+.tabs button.on{color:var(--gd);border-bottom-color:var(--g)}
+.form{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px 16px}
+.req{color:var(--bad)}
+.drop{border:2px dashed var(--line);border-radius:var(--r);padding:28px;text-align:center;color:var(--mute);cursor:pointer;background:#fafcfa}
+.drop:hover,.drop.over{border-color:var(--g);background:var(--gl)}
+.tbl-wrap{overflow:auto;border:1px solid var(--line);border-radius:8px;max-height:60vh}
+table{border-collapse:collapse;width:100%;font-size:13px;background:#fff}
+th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{background:#f6f9f6;position:sticky;top:0;z-index:1;font-weight:700;color:var(--gd)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tr.err td{background:var(--badbg)}
+tfoot td{font-weight:700;background:#f6f9f6;position:sticky;bottom:0}
+.muted{color:var(--mute);font-size:12.5px}
+.secret{font-family:Consolas,monospace;font-size:16px;background:var(--gl);border:1px solid var(--g);padding:10px 14px;border-radius:8px;display:inline-block;margin:6px 0;user-select:all}
+/* modal & toast */
+.overlay{position:fixed;inset:0;background:rgba(15,30,20,.45);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+.modal{background:#fff;border-radius:12px;padding:24px;width:100%;max-width:420px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal h2{margin:0 0 8px;font-size:18px;color:var(--gd)}
+#toast{position:fixed;bottom:20px;right:20px;z-index:60;display:flex;flex-direction:column;gap:8px}
+#toast div{background:var(--gd);color:#fff;padding:10px 16px;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.2);max-width:360px}
+#toast div.bad{background:var(--bad)}
+@media (max-width:800px){#app{grid-template-columns:1fr;grid-template-rows:56px auto 1fr}nav{border-right:0;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:4px}nav h6{display:none}nav button{width:auto}main{padding:16px}.who span{display:none}}
+</style>
+</head>
+<body>
+<div id="busy"></div>
+
+<!-- ============ LOGIN ============ -->
+<section id="login" class="hidden">
+  <form class="login-card" id="loginForm" autocomplete="on">
+    <div class="brand"><div class="logo">CRDB</div><div><b>Brokerage Portal</b><span>Trial balance &amp; reconciliation</span></div></div>
+    <label for="lu">Username</label>
+    <input id="lu" type="text" autocomplete="username" required>
+    <label for="lp">Password</label>
+    <input id="lp" type="password" autocomplete="current-password" required>
+    <button class="btn block" id="loginBtn" type="submit">Sign in</button>
+    <div id="loginMsg"></div>
+    <p class="muted" style="margin-top:18px">Forgot your password? Ask a portal administrator to reset it.</p>
+  </form>
+</section>
+
+<!-- ============ APP ============ -->
+<div id="app" class="hidden">
+  <header>
+    <div class="brand"><div class="logo">CRDB</div><div><b>Brokerage Portal</b><span>Trial balance &amp; reconciliation</span></div></div>
+    <div class="who"><span id="whoName"></span>
+      <button class="btn ghost sm" id="pwBtn" type="button">Change password</button>
+      <button class="btn ghost sm" id="outBtn" type="button">Sign out</button>
+    </div>
+  </header>
+  <nav id="nav"></nav>
+  <main id="main"></main>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(function () {
+'use strict';
+
+/* ---------------- helpers ---------------- */
+const $ = (s, el) => (el || document).querySelector(s);
+const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const store = {
+  get(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { sessionStorage.setItem(k, v); } catch (e) {} },
+  del(k) { try { sessionStorage.removeItem(k); } catch (e) {} }
+};
+const fmt = n => (typeof n === 'number' && isFinite(n)) ? n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : esc(n);
+const keyOf = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+
+const S = { token: store.get('bp_token'), user: null, modules: [], view: 'dashboard', mod: null, tab: 'manual' };
+
+let busyCount = 0;
+function busy(on) {
+  busyCount += on ? 1 : -1;
+  const b = $('#busy');
+  if (busyCount > 0) { b.classList.add('on'); } else { busyCount = 0; b.classList.remove('on'); b.style.width = '100%'; setTimeout(() => { b.style.width = ''; }, 250); }
+}
+
+function toast(text, kind) {
+  const d = document.createElement('div');
+  if (kind) d.className = kind;
+  d.textContent = text;
+  $('#toast').appendChild(d);
+  setTimeout(() => d.remove(), 4500);
+}
+
+async function api(action, data) {
+  if (!API_URL || API_URL.indexOf('PASTE_') === 0) throw new Error('Portal not connected: API_URL is not set in index.html.');
+  busy(true);
+  try {
+    let res;
+    try {
+      res = await fetch(API_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action: action, token: S.token }, data || {})) });
+    } catch (e) { throw new Error('Could not reach the server. Check your internet connection.'); }
+    let out;
+    try { out = await res.json(); } catch (e) { throw new Error('Unexpected server reply. Check the Apps Script deployment (Who has access: Anyone).'); }
+    if (!out.ok) {
+      const err = new Error(out.error || 'Request failed.');
+      err.code = out.code;
+      if (out.code === 'SESSION_EXPIRED') { signOutLocal(); }
+      if (out.code === 'PASSWORD_CHANGE_REQUIRED') { changePassword(true); }
+      throw err;
+    }
+    return out;
+  } finally { busy(false); }
+}
+
+function modal(html, onReady) {
+  const o = document.createElement('div');
+  o.className = 'overlay';
+  o.innerHTML = '<div class="modal">' + html + '</div>';
+  document.body.appendChild(o);
+  const close = () => o.remove();
+  if (onReady) onReady(o, close);
+  return close;
+}
+
+function confirmBox(title, text, okLabel) {
+  return new Promise(resolve => {
+    modal('<h2>' + esc(title) + '</h2><p>' + esc(text) + '</p><div class="row" style="justify-content:flex-end;margin-top:18px">' +
+      '<button class="btn ghost" data-a="no">Cancel</button><button class="btn danger" data-a="yes">' + esc(okLabel || 'Confirm') + '</button></div>',
+      (o, close) => {
+        o.querySelector('[data-a=no]').onclick = () => { close(); resolve(false); };
+        o.querySelector('[data-a=yes]').onclick = () => { close(); resolve(true); };
+      });
+  });
+}
+
+function download(name, content, type) {
+  const blob = content instanceof Blob ? content : new Blob([content], { type: type || 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+function toCSV(headers, rows) {
+  const q = v => { const s = String(v == null ? '' : v); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  return '﻿' + [headers.map(q).join(',')].concat(rows.map(r => headers.map(h => q(r[h])).join(','))).join('\r\n');
+}
+
+function parseCSV(text) {
+  text = text.replace(/^﻿/, '');
+  const rows = []; let row = [], f = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c;
+    } else if (c === '"') q = true;
+    else if (c === ',') { row.push(f); f = ''; }
+    else if (c === '\n') { row.push(f); rows.push(row); row = []; f = ''; }
+    else if (c !== '\r') f += c;
+  }
+  if (f !== '' || row.length) { row.push(f); rows.push(row); }
+  return rows;
+}
+
+/* ---------- validation (same rules as the server) ---------- */
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+function pad2(n) { return String(n).padStart(2, '0'); }
+function ymd(y, m, d) {
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d || y < 1900 || y > 2200) return null;
+  return y + '-' + pad2(m) + '-' + pad2(d);
+}
+function normNumber(v) {
+  if (typeof v === 'number') return isFinite(v) ? v : null;
+  let s = String(v == null ? '' : v).trim();
+  if (!s) return '';
+  let neg = false;
+  if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
+  s = s.replace(/^(TZS|TSH|USD)\s*/i, '').replace(/[,\s]/g, '');
+  if (!/^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(s)) return null;
+  const n = Number(s);
+  return neg ? -n : n;
+}
+function normDate(v) {
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return null;
+    const t = new Date(v.getTime() + 3600000);
+    return ymd(t.getFullYear(), t.getMonth() + 1, t.getDate());
+  }
+  if (typeof v === 'number') {
+    if (v > 20000 && v < 80000) { const d = new Date(Math.round((v - 25569) * 86400000)); return ymd(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()); }
+    return null;
+  }
+  const s = String(v == null ? '' : v).trim();
+  if (!s) return '';
+  let m;
+  if ((m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})(?:[T\s].*)?$/))) return ymd(+m[1], +m[2], +m[3]);
+  if ((m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})(?:\s.*)?$/))) return ymd(+m[3], +m[2], +m[1]);
+  if ((m = s.match(/^(\d{1,2})[-\s]([A-Za-z]{3})[A-Za-z]*[-\s,]+(\d{4})$/))) {
+    const mi = MONTHS.indexOf(m[2].toLowerCase());
+    return mi < 0 ? null : ymd(+m[3], mi + 1, +m[1]);
+  }
+  return null;
+}
+function cleanRow(mod, src) {
+  const row = {}, errs = [];
+  mod.columns.forEach(c => {
+    let v = src[c.name];
+    if (v === undefined || v === null) v = '';
+    if (c.type === 'number') {
+      const n = normNumber(v);
+      if (n === null) { errs.push(c.name + ' "' + v + '" is not a number'); v = String(v); } else v = n;
+    } else if (c.type === 'date') {
+      const d = normDate(v);
+      if (d === null) { errs.push(c.name + ' "' + v + '" is not a valid date'); v = String(v); } else v = d;
+    } else {
+      v = String(v).trim();
+      if (c.type === 'select' && v) {
+        const opt = (c.options || []).find(o => o.toLowerCase() === v.toLowerCase());
+        if (!opt) errs.push(c.name + ' must be one of: ' + c.options.join(', ')); else v = opt;
+      }
+      if (v.length > 500) errs.push(c.name + ' is too long');
+    }
+    if (c.required && v === '') errs.push(c.name + ' is required');
+    row[c.name] = v;
+  });
+  return { row: row, errs: errs };
+}
+
+/* ---------------- auth ---------------- */
+function showLogin() {
+  $('#app').classList.add('hidden');
+  $('#login').classList.remove('hidden');
+  setTimeout(() => $('#lu').focus(), 50);
+}
+
+function signOutLocal() {
+  S.token = null; S.user = null;
+  store.del('bp_token');
+  document.querySelectorAll('.overlay').forEach(o => o.remove());
+  showLogin();
+}
+
+$('#loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = $('#loginBtn'), msg = $('#loginMsg');
+  msg.innerHTML = '';
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  try {
+    const r = await api('login', { username: $('#lu').value.trim(), password: $('#lp').value });
+    S.token = r.token; store.set('bp_token', r.token);
+    S.user = r.user; S.modules = r.modules;
+    $('#lp').value = '';
+    enterApp();
+  } catch (err) {
+    msg.innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>';
+  } finally { btn.disabled = false; btn.textContent = 'Sign in'; }
+});
+
+$('#outBtn').onclick = async () => { try { await api('logout'); } catch (e) {} signOutLocal(); };
+$('#pwBtn').onclick = () => changePassword(false);
+
+function changePassword(forced) {
+  if (document.querySelector('#pwForm')) return;
+  modal('<h2>' + (forced ? 'Set your own password' : 'Change password') + '</h2>' +
+    (forced ? '<p class="muted">You signed in with a temporary password. Choose a new one to continue.</p>' : '') +
+    '<form id="pwForm"><label>Current password</label><input type="password" id="pw0" autocomplete="current-password" required>' +
+    '<label>New password</label><input type="password" id="pw1" autocomplete="new-password" required>' +
+    '<label>Confirm new password</label><input type="password" id="pw2" autocomplete="new-password" required>' +
+    '<p class="muted">At least 8 characters, with letters and numbers.</p><div id="pwMsg"></div>' +
+    '<div class="row" style="justify-content:flex-end;margin-top:14px">' +
+    (forced ? '<button type="button" class="btn ghost" id="pwOut">Sign out</button>' : '<button type="button" class="btn ghost" id="pwCancel">Cancel</button>') +
+    '<button class="btn" type="submit">Save password</button></div></form>',
+    (o, close) => {
+      if (forced) o.querySelector('#pwOut').onclick = () => { close(); $('#outBtn').click(); };
+      else o.querySelector('#pwCancel').onclick = close;
+      o.querySelector('#pw0').focus();
+      o.querySelector('#pwForm').onsubmit = async e => {
+        e.preventDefault();
+        const p0 = $('#pw0').value, p1 = $('#pw1').value, p2 = $('#pw2').value, m = $('#pwMsg');
+        if (p1 !== p2) { m.innerHTML = '<div class="msg bad">The new passwords do not match.</div>'; return; }
+        if (p1.length < 8 || !/[A-Za-z]/.test(p1) || !/[0-9]/.test(p1)) { m.innerHTML = '<div class="msg bad">Use at least 8 characters with letters and numbers.</div>'; return; }
+        try {
+          const r = await api('changePassword', { oldPassword: p0, newPassword: p1 });
+          S.user = r.user; close(); toast('Password changed.'); render();
+        } catch (err) { m.innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; }
+      };
+    });
+}
+
+function enterApp() {
+  $('#login').classList.add('hidden');
+  $('#app').classList.remove('hidden');
+  $('#whoName').textContent = S.user.name + (S.user.role === 'admin' ? ' · Admin' : '');
+  if (S.user.mustChange) changePassword(true);
+  go('dashboard');
+}
+
+/* ---------------- navigation ---------------- */
+function renderNav() {
+  const b = (view, mod, label) => '<button data-v="' + view + '" data-m="' + esc(mod || '') + '" class="' +
+    ((S.view === view && (S.mod || '') === (mod || '')) ? 'on' : '') + '">' + esc(label) + '</button>';
+  let h = b('dashboard', '', 'Dashboard') + '<h6>Inputs</h6>';
+  S.modules.forEach(m => { h += b('module', m.key, m.title); });
+  if (S.user.role === 'admin') h += '<h6>Administration</h6>' + b('users', '', 'Users') + b('audit', '', 'Audit log');
+  const nav = $('#nav');
+  nav.innerHTML = h;
+  nav.querySelectorAll('button').forEach(btn => { btn.onclick = () => go(btn.dataset.v, btn.dataset.m || null); });
+}
+
+function go(view, mod) { S.view = view; S.mod = mod || null; if (view === 'module') S.tab = 'manual'; render(); }
+
+function render() {
+  if (!S.user) return;
+  renderNav();
+  const main = $('#main');
+  main.scrollTop = 0;
+  if (S.view === 'dashboard') return viewDashboard(main);
+  if (S.view === 'module') return viewModule(main, S.modules.find(m => m.key === S.mod));
+  if (S.view === 'users') return viewUsers(main);
+  if (S.view === 'audit') return viewAudit(main);
+}
+
+/* ---------------- dashboard ---------------- */
+async function viewDashboard(main) {
+  main.innerHTML = '<h1>Dashboard</h1><p class="sub">Welcome, ' + esc(S.user.name) + '. Records held for each input, with control totals.</p><div class="grid" id="dash"><div class="card muted">Loading…</div></div>';
+  try {
+    const r = await api('summary');
+    if (S.view !== 'dashboard') return;
+    $('#dash').innerHTML = r.modules.map(m => {
+      let t = Object.keys(m.totals).map(k => esc(k) + ': <b>' + fmt(m.totals[k]) + '</b>').join('<br>');
+      let chk = '';
+      if (m.check && m.count) {
+        const diff = (m.totals[m.check[0]] || 0) - (m.totals[m.check[1]] || 0);
+        chk = Math.abs(diff) < 0.005 ? '<span class="pill ok">Balanced</span>' : '<span class="pill bad">Out by ' + fmt(diff) + '</span>';
+      } else if (!m.count) chk = '<span class="pill mute">No data yet</span>';
+      return '<div class="card stat" data-k="' + esc(m.key) + '"><div class="row"><h3>' + esc(m.title) + '</h3><span class="spacer"></span>' + chk + '</div>' +
+        '<div class="n">' + m.count.toLocaleString() + '</div><div class="muted">records</div><div class="t">' + t + '</div>' +
+        (m.lastAt ? '<div class="t">Last entry: ' + esc(m.lastAt) + '</div>' : '') + '</div>';
+    }).join('');
+    document.querySelectorAll('.stat').forEach(c => { c.onclick = () => go('module', c.dataset.k); });
+  } catch (err) { $('#dash').innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; }
+}
+
+/* ---------------- input module ---------------- */
+function viewModule(main, m) {
+  if (!m) return go('dashboard');
+  main.innerHTML = '<div class="row"><div><h1>' + esc(m.title) + '</h1><p class="sub">' + esc(m.description) + '</p></div><span class="spacer"></span>' +
+    '<button class="btn ghost" id="sCsv">Sample format (CSV)</button><button class="btn ghost" id="sXls">Sample format (Excel)</button></div>' +
+    '<div class="tabs"><button data-t="manual">Enter manually</button><button data-t="upload">Upload file</button><button data-t="records">Records</button></div><div id="tab"></div>';
+  $('#sCsv').onclick = () => download(m.key + '_sample.csv', toCSV(m.columns.map(c => c.name), []));
+  $('#sXls').onclick = () => sampleExcel(m);
+  main.querySelectorAll('.tabs button').forEach(b => {
+    b.classList.toggle('on', b.dataset.t === S.tab);
+    b.onclick = () => { S.tab = b.dataset.t; viewModule(main, m); };
+  });
+  const tab = $('#tab');
+  if (S.tab === 'manual') tabManual(tab, m);
+  else if (S.tab === 'upload') tabUpload(tab, m);
+  else tabRecords(tab, m);
+}
+
+function sampleExcel(m) {
+  if (!window.XLSX) { toast('Excel library did not load — use the CSV sample.', 'bad'); return; }
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([m.columns.map(c => c.name)]), 'Data');
+  const guide = [['Column', 'Type', 'Required', 'Notes']].concat(m.columns.map(c => [c.name, c.type, c.required ? 'Yes' : 'No',
+    c.type === 'date' ? 'YYYY-MM-DD or DD/MM/YYYY' : c.type === 'number' ? 'Numbers only, e.g. 1500000.00' : c.type === 'select' ? 'One of: ' + c.options.join(', ') : '']));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(guide), 'Guide');
+  XLSX.writeFile(wb, m.key + '_sample.xlsx');
+}
+
+function fieldHtml(c, i) {
+  const id = 'f' + i, lab = '<label for="' + id + '">' + esc(c.name) + (c.required ? ' <span class="req">*</span>' : '') + '</label>';
+  if (c.type === 'select') return '<div>' + lab + '<select id="' + id + '"><option value="">— choose —</option>' + c.options.map(o => '<option>' + esc(o) + '</option>').join('') + '</select></div>';
+  if (c.type === 'date') return '<div>' + lab + '<input id="' + id + '" type="date"></div>';
+  if (c.type === 'number') return '<div>' + lab + '<input id="' + id + '" type="text" inputmode="decimal" placeholder="0.00"></div>';
+  return '<div>' + lab + '<input id="' + id + '" type="text"></div>';
+}
+
+function tabManual(tab, m) {
+  tab.innerHTML = '<form class="card" id="mForm"><div class="form">' + m.columns.map(fieldHtml).join('') + '</div><div id="mMsg"></div>' +
+    '<div class="row" style="margin-top:16px"><button class="btn" type="submit">Save record</button><button class="btn ghost" type="reset">Clear</button></div></form>';
+  $('#mForm').onsubmit = async e => {
+    e.preventDefault();
+    const src = {};
+    m.columns.forEach((c, i) => { src[c.name] = $('#f' + i).value; });
+    const r = cleanRow(m, src), msg = $('#mMsg');
+    if (r.errs.length) { msg.innerHTML = '<div class="msg bad">' + r.errs.map(esc).join('<br>') + '</div>'; return; }
+    try {
+      await api('add', { module: m.key, rows: [r.row] });
+      msg.innerHTML = '<div class="msg ok">Saved.</div>';
+      $('#mForm').reset();
+      $('#f0').focus();
+    } catch (err) { msg.innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; }
+  };
+}
+
+async function readFile(file) {
+  const buf = await file.arrayBuffer();
+  if (/\.csv$/i.test(file.name)) return parseCSV(new TextDecoder('utf-8').decode(buf));
+  if (!/\.(xlsx|xls|xlsm)$/i.test(file.name)) throw new Error('Please upload a .csv, .xlsx or .xls file.');
+  if (!window.XLSX) throw new Error('The Excel reader did not load. Save the file as CSV and upload that instead.');
+  const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+  return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
+}
+
+function tabUpload(tab, m) {
+  tab.innerHTML = '<div class="card"><input type="file" id="file" accept=".csv,.xlsx,.xls,.xlsm" class="hidden">' +
+    '<div class="drop" id="drop"><b>Click to choose a file</b> or drag it here<br><span class="muted">CSV or Excel. The first row must hold the column names from the sample format; data from the first sheet is used.</span></div>' +
+    '<div id="upOut"></div></div>';
+  const input = $('#file'), drop = $('#drop');
+  drop.onclick = () => input.click();
+  drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+  drop.ondragleave = () => drop.classList.remove('over');
+  drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer.files[0]) handle(e.dataTransfer.files[0]); };
+  input.onchange = () => { if (input.files[0]) handle(input.files[0]); input.value = ''; };
+
+  async function handle(file) {
+    const out = $('#upOut');
+    out.innerHTML = '<p class="muted">Reading ' + esc(file.name) + '…</p>';
+    let grid;
+    try { grid = await readFile(file); } catch (err) { out.innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; return; }
+    grid = grid.filter(r => r.some(c => String(c).trim() !== ''));
+    if (grid.length < 2) { out.innerHTML = '<div class="msg bad">The file has no data rows under the header.</div>'; return; }
+    if (grid.length > 20001) { out.innerHTML = '<div class="msg bad">Too many rows (max 20,000 per file). Split the file.</div>'; return; }
+    const head = grid[0].map(keyOf), idx = {};
+    m.columns.forEach(c => { const i = head.indexOf(keyOf(c.name)); if (i >= 0) idx[c.name] = i; });
+    const missingReq = m.columns.filter(c => c.required && idx[c.name] === undefined).map(c => c.name);
+    if (missingReq.length) {
+      out.innerHTML = '<div class="msg bad">These required columns are missing from the first row: <b>' + missingReq.map(esc).join(', ') +
+        '</b>.<br>Download the sample format above and copy your data into it.</div>'; return;
+    }
+    const missingOpt = m.columns.filter(c => idx[c.name] === undefined).map(c => c.name);
+    const parsed = grid.slice(1).map((r, n) => {
+      const src = {};
+      m.columns.forEach(c => { src[c.name] = idx[c.name] === undefined ? '' : r[idx[c.name]]; });
+      const cr = cleanRow(m, src);
+      cr.line = n + 2;
+      return cr;
+    });
+    const bad = parsed.filter(p => p.errs.length);
+    const nums = m.columns.filter(c => c.type === 'number' && c.sum !== false);
+    const totals = {}; nums.forEach(c => { totals[c.name] = parsed.reduce((s, p) => s + (typeof p.row[c.name] === 'number' ? p.row[c.name] : 0), 0); });
+    let h = '<div class="row" style="margin:16px 0 10px"><b>' + esc(file.name) + '</b><span class="pill ' + (bad.length ? 'bad' : 'ok') + '">' +
+      parsed.length.toLocaleString() + ' rows · ' + (bad.length ? bad.length + ' with errors' : 'all valid') + '</span><span class="spacer"></span>' +
+      '<button class="btn" id="saveUp"' + (bad.length ? ' disabled' : '') + '>Save ' + parsed.length.toLocaleString() + ' rows</button></div>';
+    if (missingOpt.length) h += '<div class="msg warn">Optional columns not in the file (left blank): ' + missingOpt.map(esc).join(', ') + '</div>';
+    if (bad.length) h += '<div class="msg bad"><b>Fix these rows in your file and upload again:</b><br>' +
+      bad.slice(0, 15).map(p => 'Row ' + p.line + ': ' + p.errs.map(esc).join('; ')).join('<br>') + (bad.length > 15 ? '<br>…and ' + (bad.length - 15) + ' more.' : '') + '</div>';
+    h += '<p class="muted">Preview of the first 50 rows:</p><div class="tbl-wrap"><table><thead><tr><th>Row</th>' +
+      m.columns.map(c => '<th class="' + (c.type === 'number' ? 'num' : '') + '">' + esc(c.name) + '</th>').join('') + '</tr></thead><tbody>' +
+      parsed.slice(0, 50).map(p => '<tr class="' + (p.errs.length ? 'err' : '') + '"><td>' + p.line + '</td>' +
+        m.columns.map(c => '<td class="' + (c.type === 'number' ? 'num' : '') + '">' + (c.type === 'number' ? fmt(p.row[c.name]) : esc(p.row[c.name])) + '</td>').join('') + '</tr>').join('') +
+      '</tbody>' + (nums.length ? '<tfoot><tr><td>Total</td>' + m.columns.map(c => '<td class="num">' + (totals[c.name] !== undefined ? fmt(totals[c.name]) : '') + '</td>').join('') + '</tr></tfoot>' : '') +
+      '</table></div>';
+    out.innerHTML = h;
+    const btn = $('#saveUp');
+    if (btn) btn.onclick = async () => {
+      btn.disabled = true;
+      const batch = 'B' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      const rows = parsed.map(p => p.row);
+      let done = 0;
+      try {
+        for (let i = 0; i < rows.length; i += 500) {
+          btn.textContent = 'Saving ' + done.toLocaleString() + ' / ' + rows.length.toLocaleString() + '…';
+          await api('add', { module: m.key, rows: rows.slice(i, i + 500), batch: batch });
+          done += Math.min(500, rows.length - i);
+        }
+        out.innerHTML = '<div class="msg ok">Saved ' + done.toLocaleString() + ' rows from ' + esc(file.name) + '. Upload reference: ' + batch + '</div>';
+        toast('Upload saved.');
+      } catch (err) {
+        out.insertAdjacentHTML('afterbegin', '<div class="msg bad">' + esc(err.message) + (done ? ' — ' + done + ' rows were saved before the error (reference ' + batch + '). An administrator can delete this upload from the Records tab and you can upload again.' : '') + '</div>');
+        btn.textContent = 'Save failed';
+      }
+    };
+  }
+}
+
+async function tabRecords(tab, m) {
+  tab.innerHTML = '<div class="card muted">Loading records…</div>';
+  let r;
+  try { r = await api('list', { module: m.key }); } catch (err) { tab.innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; return; }
+  if (S.view !== 'module' || S.mod !== m.key || S.tab !== 'records') return;
+  const isAdmin = S.user.role === 'admin';
+  const all = r.rows;
+  const batches = {};
+  all.forEach(x => { if (x._batch) { batches[x._batch] = batches[x._batch] || { n: 0, at: x._createdAt, by: x._createdBy }; batches[x._batch].n++; } });
+  const cols = m.columns.map(c => c.name);
+  tab.innerHTML = '<div class="card"><div class="row"><input type="search" id="q" placeholder="Search records…" style="max-width:320px">' +
+    '<span class="muted" id="cnt"></span><span class="spacer"></span><button class="btn ghost" id="exp">Export CSV</button></div>' +
+    (isAdmin && Object.keys(batches).length ? '<div class="row" style="margin-top:12px"><select id="bsel" style="max-width:460px"><option value="">Delete a whole upload…</option>' +
+      Object.keys(batches).map(b => '<option value="' + esc(b) + '">' + esc(b) + ' — ' + batches[b].n + ' rows by ' + esc(batches[b].by) + ' at ' + esc(batches[b].at) + '</option>').join('') +
+      '</select><button class="btn danger sm" id="bdel">Delete upload</button></div>' : '') +
+    (r.total > all.length ? '<div class="msg warn">Showing the latest ' + all.length.toLocaleString() + ' of ' + r.total.toLocaleString() + ' records.</div>' : '') +
+    '<div class="tbl-wrap" style="margin-top:12px" id="tw"></div></div>';
+  let shown = all;
+  function draw() {
+    const q = $('#q').value.trim().toLowerCase();
+    shown = q ? all.filter(x => cols.concat(['_createdBy']).some(c => String(x[c]).toLowerCase().indexOf(q) >= 0)) : all;
+    const lim = shown.slice(0, 1000);
+    const nums = m.columns.filter(c => c.type === 'number' && c.sum !== false);
+    $('#cnt').textContent = shown.length.toLocaleString() + ' record(s)' + (shown.length > 1000 ? ' — first 1,000 shown; Export CSV includes all' : '');
+    $('#tw').innerHTML = !shown.length ? '<p class="muted" style="padding:14px">No records.</p>' :
+      '<table><thead><tr>' + m.columns.map(c => '<th class="' + (c.type === 'number' ? 'num' : '') + '">' + esc(c.name) + '</th>').join('') +
+      '<th>Entered by</th><th>Entered at</th>' + (isAdmin ? '<th></th>' : '') + '</tr></thead><tbody>' +
+      lim.map(x => '<tr>' + m.columns.map(c => '<td class="' + (c.type === 'number' ? 'num' : '') + '">' + (c.type === 'number' && x[c.name] !== '' ? fmt(Number(x[c.name])) : esc(x[c.name])) + '</td>').join('') +
+        '<td>' + esc(x._createdBy) + '</td><td>' + esc(x._createdAt) + '</td>' + (isAdmin ? '<td><button class="btn danger sm" data-id="' + esc(x._id) + '">Delete</button></td>' : '') + '</tr>').join('') +
+      '</tbody>' + (nums.length ? '<tfoot><tr>' + m.columns.map((c, i) => '<td class="num">' + (c.type === 'number' && c.sum !== false ? fmt(shown.reduce((s, x) => s + (Number(x[c.name]) || 0), 0)) : (i === 0 ? 'Total' : '')) + '</td>').join('') + '<td></td><td></td>' + (isAdmin ? '<td></td>' : '') + '</tr></tfoot>' : '') + '</table>';
+    $('#tw').querySelectorAll('[data-id]').forEach(b => {
+      b.onclick = async () => {
+        if (!(await confirmBox('Delete record', 'Delete this record permanently? This is recorded in the audit log.', 'Delete'))) return;
+        try { await api('remove', { module: m.key, id: b.dataset.id }); toast('Record deleted.'); tabRecords(tab, m); } catch (err) { toast(err.message, 'bad'); }
+      };
+    });
+  }
+  $('#q').oninput = draw;
+  $('#exp').onclick = () => download(m.key + '_records.csv', toCSV(cols.concat(['_createdBy', '_createdAt', '_batch']), shown));
+  const bdel = $('#bdel');
+  if (bdel) bdel.onclick = async () => {
+    const b = $('#bsel').value;
+    if (!b) { toast('Choose an upload first.', 'bad'); return; }
+    if (!(await confirmBox('Delete upload', 'Delete all ' + batches[b].n + ' rows from upload ' + b + '? This cannot be undone.', 'Delete upload'))) return;
+    try { const x = await api('removeBatch', { module: m.key, batch: b }); toast(x.removed + ' rows deleted.'); tabRecords(tab, m); } catch (err) { toast(err.message, 'bad'); }
+  };
+  draw();
+}
+
+/* ---------------- admin: users ---------------- */
+function showTemp(title, username, temp) {
+  modal('<h2>' + esc(title) + '</h2><p>Username: <b>' + esc(username) + '</b><br>Temporary password:</p><div class="secret">' + esc(temp) + '</div>' +
+    '<p class="muted">Shown only once. Send the username and the password through different channels (e.g. email + SMS). The user must change it at first sign-in.</p>' +
+    '<div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn ghost" id="cp">Copy password</button><button class="btn" id="ok">Done</button></div>',
+    (o, close) => {
+      o.querySelector('#ok').onclick = close;
+      o.querySelector('#cp').onclick = () => { try { navigator.clipboard.writeText(temp).then(() => toast('Copied.')); } catch (e) { toast('Select the password and copy it.', 'bad'); } };
+    });
+}
+
+async function viewUsers(main) {
+  main.innerHTML = '<h1>Users</h1><p class="sub">Create accounts, reset passwords and switch access on or off.</p>' +
+    '<form class="card" id="uForm"><div class="form"><div><label>Username</label><input id="un" type="text" placeholder="e.g. knjelekela" required></div>' +
+    '<div><label>Full name</label><input id="uf" type="text" required></div><div><label>Role</label><select id="ur"><option value="user">User</option><option value="admin">Administrator</option></select></div></div>' +
+    '<div id="uMsg"></div><button class="btn" type="submit" style="margin-top:14px">Create user</button></form><div class="card" id="uList"><p class="muted">Loading…</p></div>';
+  $('#uForm').onsubmit = async e => {
+    e.preventDefault();
+    try {
+      const r = await api('addUser', { username: $('#un').value, name: $('#uf').value, role: $('#ur').value });
+      $('#uForm').reset(); $('#uMsg').innerHTML = '';
+      showTemp('User created', r.username, r.tempPassword);
+      loadUsers();
+    } catch (err) { $('#uMsg').innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; }
+  };
+  loadUsers();
+}
+
+async function loadUsers() {
+  const box = $('#uList');
+  try {
+    const r = await api('listUsers');
+    if (S.view !== 'users') return;
+    box.innerHTML = '<div class="tbl-wrap"><table><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Status</th><th>Last sign-in</th><th></th></tr></thead><tbody>' +
+      r.users.map(u => '<tr><td>' + esc(u.username) + '</td><td>' + esc(u.name) + '</td><td>' + esc(u.role) + '</td><td>' +
+        (u.active ? (u.mustChange ? '<span class="pill mute">Awaiting first sign-in</span>' : '<span class="pill ok">Active</span>') : '<span class="pill bad">Disabled</span>') +
+        '</td><td>' + esc(u.lastLogin || '—') + '</td><td class="row">' +
+        '<button class="btn ghost sm" data-reset="' + esc(u.username) + '">Reset password</button>' +
+        (u.username !== S.user.username ? '<button class="btn ' + (u.active ? 'danger' : 'ghost') + ' sm" data-act="' + esc(u.username) + '" data-on="' + (u.active ? '0' : '1') + '">' + (u.active ? 'Disable' : 'Enable') + '</button>' : '') +
+        '</td></tr>').join('') + '</tbody></table></div>';
+    box.querySelectorAll('[data-reset]').forEach(b => {
+      b.onclick = async () => {
+        if (!(await confirmBox('Reset password', 'Give ' + b.dataset.reset + ' a new temporary password? Their current password stops working.', 'Reset'))) return;
+        try { const x = await api('resetPassword', { username: b.dataset.reset }); showTemp('Password reset', x.username, x.tempPassword); loadUsers(); } catch (err) { toast(err.message, 'bad'); }
+      };
+    });
+    box.querySelectorAll('[data-act]').forEach(b => {
+      b.onclick = async () => {
+        try { await api('setUserActive', { username: b.dataset.act, active: b.dataset.on === '1' }); toast('Updated.'); loadUsers(); } catch (err) { toast(err.message, 'bad'); }
+      };
+    });
+  } catch (err) { box.innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; }
+}
+
+/* ---------------- admin: audit ---------------- */
+async function viewAudit(main) {
+  main.innerHTML = '<h1>Audit log</h1><p class="sub">The latest 300 actions in the portal.</p><div class="card" id="aList"><p class="muted">Loading…</p></div>';
+  try {
+    const r = await api('audit');
+    if (S.view !== 'audit') return;
+    $('#aList').innerHTML = '<div class="tbl-wrap"><table><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Input</th><th>Detail</th></tr></thead><tbody>' +
+      r.entries.map(x => '<tr><td>' + esc(x.time) + '</td><td>' + esc(x.username) + '</td><td>' + esc(x.action) + '</td><td>' + esc(x.module) + '</td><td>' + esc(x.detail) + '</td></tr>').join('') +
+      '</tbody></table></div>';
+  } catch (err) { $('#aList').innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; }
+}
+
+/* ---------------- start ---------------- */
+(async function start() {
+  if (!S.token) return showLogin();
+  try { const r = await api('me'); S.user = r.user; S.modules = r.modules; enterApp(); }
+  catch (e) { signOutLocal(); }
+})();
+
+})();
+</script>
+</body>
+</html>

@@ -222,6 +222,40 @@ async function api(action, data) {
   } finally { busy(false); }
 }
 
+/* ---------- page memory: show what was loaded before at once, then refresh quietly ---------- */
+const CACHE = new Map(), INFLIGHT = new Map();
+const FRESH_MS = 15000;           // within 15 s of the last load, do not ask the server again
+let GEN = 0;                      // bumps whenever data changes, so older answers are not remembered
+function clearCache() { GEN++; CACHE.clear(); INFLIGHT.clear(); }
+function dropCache(prefix) {
+  GEN++;
+  [CACHE, INFLIGHT].forEach(mp => Array.from(mp.keys()).forEach(k => { if (k === prefix || k.indexOf(prefix + ':') === 0) mp.delete(k); }));
+}
+function dataChanged(moduleKey) { dropCache('summary'); dropCache('audit'); if (moduleKey) dropCache('list:' + moduleKey); }
+function fetchInto(key, action, data) {
+  if (INFLIGHT.has(key)) return INFLIGHT.get(key);
+  const gen = GEN;
+  const p = api(action, data).then(r => { const e = { data: r, json: JSON.stringify(r), at: Date.now() }; if (gen === GEN) CACHE.set(key, e); return e; });
+  const done = () => { if (INFLIGHT.get(key) === p) INFLIGHT.delete(key); };
+  p.then(done, done);
+  INFLIGHT.set(key, p);
+  return p;
+}
+/* onData(result) runs with the remembered copy straight away, and again if the server's copy differs. */
+async function loadCached(key, action, data, onData, still) {
+  const had = CACHE.get(key);
+  if (had) onData(had.data);
+  if (had && Date.now() - had.at < FRESH_MS) return;
+  try {
+    const e = await fetchInto(key, action, data);
+    if (still() && (!had || had.json !== e.json)) onData(e.data);
+  } catch (err) {
+    if (!had) throw err;
+    if (still() && err.code !== 'SESSION_EXPIRED') toast('Could not refresh: ' + err.message, 'bad');
+  }
+}
+function prefetch(key, action, data) { if (!CACHE.has(key)) fetchInto(key, action, data).catch(() => {}); }
+
 function modal(html, onReady) {
   const o = document.createElement('div');
   o.className = 'overlay';
@@ -413,6 +447,7 @@ $('#pinForm').addEventListener('submit', async e => {
 
 function signOutLocal() {
   S.token = null; S.user = null;
+  clearCache();
   store.del('bp_token');
   document.querySelectorAll('.overlay').forEach(o => o.remove());
   showLogin();
@@ -499,11 +534,11 @@ function render() {
 }
 
 /* ---------------- dashboard ---------------- */
-async function viewDashboard(main) {
+function viewDashboard(main) {
   main.innerHTML = '<h1>Dashboard</h1><p class="sub">Welcome, ' + esc(S.user.name) + '. Records held for each input, with control totals.</p><div class="grid" id="dash"><div class="card muted">Loading…</div></div>';
-  try {
-    const r = await api('summary');
-    if (S.view !== 'dashboard') return;
+  const still = () => S.view === 'dashboard' && !!$('#dash');
+  loadCached('summary', 'summary', {}, r => {
+    if (!still()) return;
     $('#dash').innerHTML = r.modules.map(m => {
       let t = Object.keys(m.totals).map(k => esc(k) + ': <b>' + fmt(m.totals[k]) + '</b>').join('<br>');
       let chk = '';
@@ -516,7 +551,7 @@ async function viewDashboard(main) {
         (m.lastAt ? '<div class="t">Last entry: ' + esc(m.lastAt) + '</div>' : '') + '</div>';
     }).join('');
     document.querySelectorAll('.stat').forEach(c => { c.onclick = () => go('module', c.dataset.k); });
-  } catch (err) { $('#dash').innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; }
+  }, still).catch(err => { if (still()) $('#dash').innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; });
 }
 
 /* ---------------- input module ---------------- */
@@ -532,6 +567,7 @@ function viewModule(main, m) {
     b.onclick = () => { S.tab = b.dataset.t; viewModule(main, m); };
   });
   const tab = $('#tab');
+  prefetch('list:' + m.key, 'list', { module: m.key });
   if (S.tab === 'manual') tabManual(tab, m);
   else if (S.tab === 'upload') tabUpload(tab, m);
   else tabRecords(tab, m);
@@ -566,6 +602,7 @@ function tabManual(tab, m) {
     if (r.errs.length) { msg.innerHTML = '<div class="msg bad">' + r.errs.map(esc).join('<br>') + '</div>'; return; }
     try {
       await api('add', { module: m.key, rows: [r.row] });
+      dataChanged(m.key);
       msg.innerHTML = '<div class="msg ok">Saved.</div>';
       $('#mForm').reset();
       $('#f0').focus();
@@ -644,9 +681,11 @@ function tabUpload(tab, m) {
           await api('add', { module: m.key, rows: rows.slice(i, i + 500), batch: batch });
           done += Math.min(500, rows.length - i);
         }
+        dataChanged(m.key);
         out.innerHTML = '<div class="msg ok">Saved ' + done.toLocaleString() + ' rows from ' + esc(file.name) + '. Upload reference: ' + batch + '</div>';
         toast('Upload saved.');
       } catch (err) {
+        if (done) dataChanged(m.key);
         out.insertAdjacentHTML('afterbegin', '<div class="msg bad">' + esc(err.message) + (done ? ' — ' + done + ' rows were saved before the error (reference ' + batch + '). An administrator can delete this upload from the Records tab and you can upload again.' : '') + '</div>');
         btn.textContent = 'Save failed';
       }
@@ -654,11 +693,15 @@ function tabUpload(tab, m) {
   }
 }
 
-async function tabRecords(tab, m) {
+function tabRecords(tab, m) {
   tab.innerHTML = '<div class="card muted">Loading records…</div>';
-  let r;
-  try { r = await api('list', { module: m.key }); } catch (err) { tab.innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; return; }
-  if (S.view !== 'module' || S.mod !== m.key || S.tab !== 'records') return;
+  const still = () => S.view === 'module' && S.mod === m.key && S.tab === 'records' && document.body.contains(tab);
+  loadCached('list:' + m.key, 'list', { module: m.key }, r => { if (still()) drawRecords(tab, m, r); }, still)
+    .catch(err => { if (still()) tab.innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; });
+}
+
+function drawRecords(tab, m, r) {
+  const prevQ = $('#q') ? $('#q').value : '';
   const canDelete = isAdmin();
   const all = r.rows;
   const batches = {};
@@ -687,10 +730,11 @@ async function tabRecords(tab, m) {
     $('#tw').querySelectorAll('[data-id]').forEach(b => {
       b.onclick = async () => {
         if (!(await confirmBox('Delete record', 'Delete this record permanently? This is recorded in the audit log.', 'Delete'))) return;
-        try { await api('remove', { module: m.key, id: b.dataset.id }); toast('Record deleted.'); tabRecords(tab, m); } catch (err) { toast(err.message, 'bad'); }
+        try { await api('remove', { module: m.key, id: b.dataset.id }); dataChanged(m.key); toast('Record deleted.'); tabRecords(tab, m); } catch (err) { toast(err.message, 'bad'); }
       };
     });
   }
+  $('#q').value = prevQ;
   $('#q').oninput = draw;
   $('#exp').onclick = () => download(m.key + '_records.csv', toCSV(cols.concat(['_createdBy', '_createdAt', '_batch']), shown));
   const bdel = $('#bdel');
@@ -698,7 +742,7 @@ async function tabRecords(tab, m) {
     const b = $('#bsel').value;
     if (!b) { toast('Choose an upload first.', 'bad'); return; }
     if (!(await confirmBox('Delete upload', 'Delete all ' + batches[b].n + ' rows from upload ' + b + '? This cannot be undone.', 'Delete upload'))) return;
-    try { const x = await api('removeBatch', { module: m.key, batch: b }); toast(x.removed + ' rows deleted.'); tabRecords(tab, m); } catch (err) { toast(err.message, 'bad'); }
+    try { const x = await api('removeBatch', { module: m.key, batch: b }); dataChanged(m.key); toast(x.removed + ' rows deleted.'); tabRecords(tab, m); } catch (err) { toast(err.message, 'bad'); }
   };
   draw();
 }
@@ -724,7 +768,7 @@ function editEmail(username, current) {
       o.querySelector('#ee').focus();
       o.querySelector('#eForm').onsubmit = async e => {
         e.preventDefault();
-        try { await api('setUserEmail', { username: username, email: o.querySelector('#ee').value.trim() }); close(); toast('Email updated.'); loadUsers(); }
+        try { await api('setUserEmail', { username: username, email: o.querySelector('#ee').value.trim() }); close(); toast('Email updated.'); usersChanged(); }
         catch (err) { o.querySelector('#eMsg').innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; }
       };
     });
@@ -749,7 +793,7 @@ async function viewUsers(main) {
       const r = await api('addUser', { name: $('#uf').value, email: $('#ue').value, role: $('#ur').value });
       $('#uForm').reset(); $('#uMsg').innerHTML = ''; $('#unPrev').textContent = '';
       showPin('User created', r);
-      loadUsers();
+      usersChanged();
     } catch (err) { $('#uMsg').innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; }
     finally { btn.disabled = false; }
   };
@@ -775,11 +819,17 @@ function statusPill(u) {
   return '<span class="pill ok">Active</span>' + (u.pinPending ? ' <span class="pill mute">Code sent</span>' : '');
 }
 
-async function loadUsers() {
+function usersChanged() { dropCache('listUsers'); dropCache('audit'); loadUsers(); }
+
+function loadUsers() {
   const box = $('#uList');
-  try {
-    const r = await api('listUsers');
-    if (S.view !== 'users') return;
+  const still = () => S.view === 'users' && document.body.contains(box);
+  loadCached('listUsers', 'listUsers', {}, r => { if (still()) drawUsers(box, r); }, still)
+    .catch(err => { if (still()) box.innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; });
+}
+
+function drawUsers(box, r) {
+  {
     const order = { master: 0, admin: 1, user: 2 };
     const users = r.users.slice().sort((a, b) => (order[a.role] - order[b.role]) || a.username.localeCompare(b.username));
     const byName = {};
@@ -803,7 +853,7 @@ async function loadUsers() {
         const u = byName[b.dataset.pin];
         if (!(await confirmBox('Send code', 'Email a new 6-digit code to ' + u.username + (u.email ? ' (' + u.email + ')' : ' (no email on file — the code will be shown to you)') +
           ' so they can set a new password? Their current password keeps working until they do. This also clears a "too many attempts" lock.', 'Send code'))) return;
-        try { const x = await api('sendPin', { username: u.username }); showPin('Code sent', x); loadUsers(); } catch (err) { toast(err.message, 'bad'); }
+        try { const x = await api('sendPin', { username: u.username }); showPin('Code sent', x); usersChanged(); } catch (err) { toast(err.message, 'bad'); }
       };
     });
     box.querySelectorAll('[data-email]').forEach(b => { b.onclick = () => editEmail(b.dataset.email, byName[b.dataset.email].email); });
@@ -811,18 +861,18 @@ async function loadUsers() {
       b.onclick = async () => {
         const on = b.dataset.on === '1';
         if (!on && !(await confirmBox('Disable account', 'Disable ' + b.dataset.act + '? They are signed out at once and cannot sign in until enabled again.', 'Disable'))) return;
-        try { await api('setUserActive', { username: b.dataset.act, active: on }); toast(on ? 'Account enabled.' : 'Account disabled.'); loadUsers(); } catch (err) { toast(err.message, 'bad'); }
+        try { await api('setUserActive', { username: b.dataset.act, active: on }); toast(on ? 'Account enabled.' : 'Account disabled.'); usersChanged(); } catch (err) { toast(err.message, 'bad'); }
       };
     });
     box.querySelectorAll('[data-role]').forEach(b => {
       b.onclick = async () => {
         const to = b.dataset.to;
         if (!(await confirmBox('Change role', 'Make ' + b.dataset.role + ' ' + (to === 'admin' ? 'an Administrator' : 'a regular User') + '?', 'Change role'))) return;
-        try { await api('setUserRole', { username: b.dataset.role, role: to }); toast('Role changed.'); loadUsers(); } catch (err) { toast(err.message, 'bad'); }
+        try { await api('setUserRole', { username: b.dataset.role, role: to }); toast('Role changed.'); usersChanged(); } catch (err) { toast(err.message, 'bad'); }
       };
     });
     box.querySelectorAll('[data-log]').forEach(b => { b.onclick = () => { S.auditUser = b.dataset.log; go('audit'); }; });
-  } catch (err) { box.innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; }
+  }
 }
 
 /* ---------------- admin: audit ---------------- */
@@ -846,11 +896,16 @@ async function viewAudit(main) {
     '<div class="tbl-wrap" style="margin-top:12px" id="aList"><p class="muted" style="padding:14px">Loading…</p></div></div>';
   const userSel = $('#aUser'), kindSel = $('#aKind');
   let entries = [], filled = false;
-  async function load(user) {
-    $('#aList').innerHTML = '<p class="muted" style="padding:14px">Loading…</p>';
-    try {
-      const r = await api('audit', { user: user, kind: kindSel.value });
-      if (S.view !== 'audit') return;
+  let seq = 0;
+  function load(user) {
+    const kind = kindSel.value, list = $('#aList'), mine = ++seq;
+    list.innerHTML = '<p class="muted" style="padding:14px">Loading…</p>';
+    const still = () => S.view === 'audit' && document.body.contains(list) && mine === seq;
+    loadCached('audit:' + user + ':' + kind, 'audit', { user: user, kind: kind }, r => { if (still()) drawAudit(r, user); }, still)
+      .catch(err => { if (still()) list.innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; });
+  }
+  function drawAudit(r, user) {
+    {
       if (!filled) { r.users.forEach(n => userSel.insertAdjacentHTML('beforeend', '<option value="' + esc(n) + '">' + esc(n) + '</option>')); filled = true; }
       if (user && !Array.from(userSel.options).some(o => o.value === user)) userSel.insertAdjacentHTML('beforeend', '<option value="' + esc(user) + '">' + esc(user) + '</option>');
       userSel.value = user;
@@ -861,7 +916,7 @@ async function viewAudit(main) {
         entries.map(x => '<tr class="' + (x.action === 'loginFailed' || x.action === 'pinFailed' ? 'err' : '') + '"><td>' + esc(x.time) + '</td><td>' + esc(x.username) + '</td><td>' +
           esc(ROLE_LABEL[x.role] || (x.role === 'system' ? 'System' : '—')) + '</td><td>' + esc(ACTION_LABEL[x.action] || x.action) + '</td><td>' + esc(x.module) + '</td><td>' + esc(x.detail) + '</td></tr>').join('') +
         '</tbody></table>';
-    } catch (err) { $('#aList').innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; }
+    }
   }
   userSel.onchange = () => load(userSel.value);
   kindSel.onchange = () => load(userSel.value);

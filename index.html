@@ -124,23 +124,30 @@ tfoot td{font-weight:700;background:#f6f9f6;position:sticky;bottom:0}
     <input id="lp" type="password" autocomplete="current-password" required>
     <button class="btn block" id="loginBtn" type="submit">Sign in</button>
     <div id="loginMsg"></div>
-    <p class="muted" style="margin-top:18px">New user, or forgot your password? <button type="button" class="link" id="toPin">Set password with PIN</button></p>
+    <p class="muted" style="margin-top:18px">First time here? <button type="button" class="link" id="toSetup">New user setup</button><br>
+      Forgot your password? <button type="button" class="link" id="toReset">Reset it</button></p>
   </form>
-  <form class="login-card hidden" id="pinForm" autocomplete="off">
+  <form class="login-card hidden" id="pinForm" autocomplete="off" novalidate>
     <div class="brand"><img class="logo-img" src="assets/crdb-logo.png" alt="CRDB Bank"><div><b>Brokerage Portal</b><span>Trial balance &amp; reconciliation</span></div></div>
-    <h2>Set your password</h2>
-    <p class="muted">Enter the 6-digit PIN from your email. No PIN, or it has expired? Enter your username and click <b>Email me a PIN</b>.</p>
+    <h2 id="pinTitle">New user setup</h2>
+    <p class="muted" id="pinIntro"></p>
     <label for="pu">Username</label>
-    <div class="row" style="flex-wrap:nowrap"><input id="pu" type="text" autocomplete="username" required style="flex:1"><button type="button" class="btn ghost" id="pinSend">Email me a PIN</button></div>
-    <label for="pp">PIN</label>
-    <input id="pp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 digits" required>
-    <label for="pn1">New password</label>
-    <input id="pn1" type="password" autocomplete="new-password" required>
-    <label for="pn2">Confirm new password</label>
-    <input id="pn2" type="password" autocomplete="new-password" required>
-    <p class="muted">At least 8 characters, with letters and numbers.</p>
-    <button class="btn block" id="pinBtn" type="submit">Set password and sign in</button>
+    <input id="pu" type="text" autocomplete="username" autocapitalize="off" spellcheck="false">
+    <label for="pe">Work email</label>
+    <input id="pe" type="email" autocomplete="email" placeholder="name@crdbbank.co.tz">
+    <button type="button" class="btn block" id="pinSend">Send me a code</button>
+    <p class="muted" id="haveCodeP" style="margin:10px 0 0"><button type="button" class="link" id="haveCode">I already have a code</button></p>
     <div id="pinMsg"></div>
+    <div id="pinStep2" class="hidden">
+      <label for="pp">6-digit code from the email</label>
+      <input id="pp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="e.g. 123456">
+      <label for="pn1">New password</label>
+      <input id="pn1" type="password" autocomplete="new-password">
+      <label for="pn2">Confirm new password</label>
+      <input id="pn2" type="password" autocomplete="new-password">
+      <p class="muted">At least 8 characters, with letters and numbers.</p>
+      <button class="btn block" id="pinBtn" type="submit">Set password and sign in</button>
+    </div>
     <p class="muted" style="margin-top:18px"><button type="button" class="link" id="toLogin">← Back to sign in</button></p>
   </form>
 </section>
@@ -340,36 +347,57 @@ function showLogin() {
   showPinForm(false);
 }
 
-function showPinForm(show) {
+/* mode: 'setup' (first time), 'reset' (forgot password), 'code' (already has a code from an email) */
+function showPinForm(show, mode) {
   $('#loginForm').classList.toggle('hidden', show);
   $('#pinForm').classList.toggle('hidden', !show);
   $('#loginMsg').innerHTML = ''; $('#pinMsg').innerHTML = '';
-  if (show) {
-    if (!$('#pu').value && $('#lu').value.trim()) $('#pu').value = $('#lu').value.trim();
-    setTimeout(() => ($('#pu').value ? $('#pp') : $('#pu')).focus(), 50);
-  } else setTimeout(() => $('#lu').focus(), 50);
+  if (!show) { setTimeout(() => $('#lu').focus(), 50); return; }
+  const reset = mode === 'reset';
+  $('#pinTitle').textContent = reset ? 'Reset your password' : 'New user setup';
+  $('#pinIntro').textContent = reset
+    ? 'Enter your username and your work email. We will email you a 6-digit code to set a new password.'
+    : 'Enter your username and your CRDB work email. We will email you a 6-digit code to set your password.';
+  if (!$('#pu').value && $('#lu').value.trim()) $('#pu').value = $('#lu').value.trim();
+  setStep2(mode === 'code');
+  setTimeout(() => (!$('#pu').value ? $('#pu') : mode === 'code' ? $('#pp') : $('#pe')).focus(), 50);
 }
 
-$('#toPin').onclick = () => showPinForm(true);
-$('#toLogin').onclick = () => showPinForm(false);
+function setStep2(on) {
+  $('#pinStep2').classList.toggle('hidden', !on);
+  $('#haveCodeP').classList.toggle('hidden', on);
+  $('#pinSend').className = on ? 'btn ghost block' : 'btn block';
+  $('#pinSend').textContent = on ? 'Send me a new code' : 'Send me a code';
+}
 
-$('#pinSend').onclick = async () => {
-  const u = $('#pu').value.trim(), m = $('#pinMsg'), b = $('#pinSend');
-  if (!u) { m.innerHTML = '<div class="msg bad">Enter your username first.</div>'; $('#pu').focus(); return; }
+$('#toSetup').onclick = () => showPinForm(true, 'setup');
+$('#toReset').onclick = () => showPinForm(true, 'reset');
+$('#toLogin').onclick = () => showPinForm(false);
+$('#haveCode').onclick = () => { setStep2(true); $('#pinMsg').innerHTML = ''; ($('#pu').value ? $('#pp') : $('#pu')).focus(); };
+
+async function sendCode() {
+  const u = $('#pu').value.trim(), em = $('#pe').value.trim(), m = $('#pinMsg'), b = $('#pinSend');
+  if (!u) { m.innerHTML = '<div class="msg bad">Enter your username.</div>'; $('#pu').focus(); return; }
+  if (!em) { m.innerHTML = '<div class="msg bad">Enter your work email.</div>'; $('#pe').focus(); return; }
+  const label = b.textContent;
   b.disabled = true; b.textContent = 'Sending…';
   try {
-    const r = await api('requestPin', { username: u });
+    const r = await api('requestPin', { username: u, email: em });
+    setStep2(true);
     m.innerHTML = '<div class="msg ok">' + esc(r.message) + '</div>';
     $('#pp').focus();
-  } catch (err) { m.innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; }
-  finally { b.disabled = false; b.textContent = 'Email me a PIN'; }
-};
+  } catch (err) { b.textContent = label; m.innerHTML = '<div class="msg bad">' + esc(err.message) + '</div>'; }
+  finally { b.disabled = false; }
+}
+$('#pinSend').onclick = sendCode;
 
 $('#pinForm').addEventListener('submit', async e => {
   e.preventDefault();
+  if ($('#pinStep2').classList.contains('hidden')) return sendCode();   // Enter on the first step sends the code
   const m = $('#pinMsg'), btn = $('#pinBtn'), p1 = $('#pn1').value, p2 = $('#pn2').value;
   m.innerHTML = '';
-  if (!/^\d{6}$/.test($('#pp').value.trim())) { m.innerHTML = '<div class="msg bad">The PIN is the 6 digits from the email.</div>'; return; }
+  if (!$('#pu').value.trim()) { m.innerHTML = '<div class="msg bad">Enter your username.</div>'; $('#pu').focus(); return; }
+  if (!/^\d{6}$/.test($('#pp').value.trim())) { m.innerHTML = '<div class="msg bad">The code is the 6 digits from the email.</div>'; return; }
   if (p1 !== p2) { m.innerHTML = '<div class="msg bad">The new passwords do not match.</div>'; return; }
   if (!strongPw(p1)) { m.innerHTML = '<div class="msg bad">Use at least 8 characters with letters and numbers.</div>'; return; }
   btn.disabled = true; btn.textContent = 'Saving…';
@@ -679,18 +707,22 @@ async function tabRecords(tab, m) {
 
 /* ---------------- admin: users ---------------- */
 function showPin(title, r) {
-  const body = r.emailed
-    ? '<p>A 6-digit PIN was emailed to <b>' + esc(r.email) + '</b> for user <b>' + esc(r.username) + '</b>. It is valid for ' + esc(r.hours) + ' hours.</p>' +
-      '<p class="muted">They open the portal, click <b>Set password with PIN</b> and choose their own password. If the email does not arrive, ask them to check spam, or click <b>Send PIN</b> again.</p>'
-    : '<div class="msg warn">The email could not be sent' + (r.email ? ' to ' + esc(r.email) : ' (no email on file)') + '. Give this PIN to <b>' + esc(r.username) +
+  const body = r.selfSetup
+    ? '<p>Account <b>' + esc(r.username) + '</b> is ready. No email was entered, so ask the person to:</p>' +
+      '<ol><li>Open the portal and click <b>New user setup</b></li><li>Enter username <b>' + esc(r.username) + '</b> and their CRDB work email</li>' +
+      '<li>Enter the 6-digit code they receive and choose a password</li></ol>'
+    : r.emailed
+    ? '<p>A 6-digit code was emailed to <b>' + esc(r.email) + '</b> for user <b>' + esc(r.username) + '</b>. It is valid for ' + esc(r.hours) + ' hours.</p>' +
+      '<p class="muted">They open the portal, click <b>New user setup → I already have a code</b> and choose their own password. If the email does not arrive, ask them to check spam, or click <b>Send code</b> again.</p>'
+    : '<div class="msg warn">The email could not be sent' + (r.email ? ' to ' + esc(r.email) : ' (no email on file)') + '. Give this code to <b>' + esc(r.username) +
       '</b> privately, e.g. by phone. It is valid for ' + esc(r.hours) + ' hours.</div><div class="secret">' + esc(r.pin) + '</div>' +
-      '<p class="muted">They open the portal, click <b>Set password with PIN</b> and choose their own password.</p>';
+      '<p class="muted">They open the portal, click <b>New user setup → I already have a code</b> and choose their own password.</p>';
   modal('<h2>' + esc(title) + '</h2>' + body + '<div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn" id="ok">Done</button></div>',
     (o, close) => { o.querySelector('#ok').onclick = close; });
 }
 
 function editEmail(username, current) {
-  modal('<h2>Change email</h2><p>Work email for <b>' + esc(username) + '</b>. PINs are sent to this address.</p>' +
+  modal('<h2>Change email</h2><p>Work email for <b>' + esc(username) + '</b>. Password codes are sent to this address.</p>' +
     '<form id="eForm"><input type="email" id="ee" required value="' + esc(current) + '"><div id="eMsg"></div>' +
     '<div class="row" style="justify-content:flex-end;margin-top:14px"><button type="button" class="btn ghost" id="eCancel">Cancel</button><button class="btn" type="submit">Save email</button></div></form>',
     (o, close) => {
@@ -706,15 +738,15 @@ function editEmail(username, current) {
 
 async function viewUsers(main) {
   main.innerHTML = '<h1>Users</h1><p class="sub">' + (isMaster()
-      ? 'Create accounts, send password PINs and switch access on or off — for users and administrators.'
-      : 'Create user accounts, send password PINs and switch access on or off. Administrator accounts are managed by the master administrator.') + '</p>' +
+      ? 'Create accounts, send password codes and switch access on or off — for users and administrators.'
+      : 'Create user accounts, send password codes and switch access on or off. Administrator accounts are managed by the master administrator.') + '</p>' +
     '<form class="card" id="uForm"><div class="form">' +
     '<div><label for="un">Username</label><input id="un" type="text" placeholder="e.g. jmushi" required></div>' +
     '<div><label for="uf">Full name</label><input id="uf" type="text" required></div>' +
-    '<div><label for="ue">Work email</label><input id="ue" type="email" placeholder="name@company" required></div>' +
+    '<div><label for="ue">Work email <span class="muted">(optional)</span></label><input id="ue" type="email" placeholder="name@crdbbank.co.tz"></div>' +
     '<div><label for="ur">Role</label><select id="ur"><option value="user">User</option>' + (isMaster() ? '<option value="admin">Administrator</option>' : '') + '</select></div></div>' +
-    '<p class="muted">The new person receives an email with a 6-digit PIN to set their own password.</p>' +
-    '<div id="uMsg"></div><button class="btn" id="uBtn" type="submit" style="margin-top:6px">Create user &amp; email PIN</button></form>' +
+    '<p class="muted">With a work email, the person is emailed a 6-digit code right away. Without one, they use <b>New user setup</b> on the sign-in page with their username and CRDB work email.</p>' +
+    '<div id="uMsg"></div><button class="btn" id="uBtn" type="submit" style="margin-top:6px">Create user</button></form>' +
     '<div class="card" id="uList"><p class="muted">Loading…</p></div>';
   $('#uForm').onsubmit = async e => {
     e.preventDefault();
@@ -733,8 +765,8 @@ async function viewUsers(main) {
 
 function statusPill(u) {
   if (!u.active) return '<span class="pill bad">Disabled</span>';
-  if (!u.lastLogin) return '<span class="pill mute">' + (u.pinPending ? 'PIN sent · awaiting first sign-in' : 'Awaiting first sign-in') + '</span>';
-  return '<span class="pill ok">Active</span>' + (u.pinPending ? ' <span class="pill mute">PIN sent</span>' : '');
+  if (!u.lastLogin) return '<span class="pill mute">' + (u.pinPending ? 'Code sent · awaiting first sign-in' : 'Awaiting first sign-in') + '</span>';
+  return '<span class="pill ok">Active</span>' + (u.pinPending ? ' <span class="pill mute">Code sent</span>' : '');
 }
 
 async function loadUsers() {
@@ -751,7 +783,7 @@ async function loadUsers() {
         const me = u.username === S.user.username;
         let acts = '';
         if (u.canManage) {
-          if (u.active) acts += '<button class="btn ghost sm" data-pin="' + esc(u.username) + '">Send PIN</button>';
+          if (u.active) acts += '<button class="btn ghost sm" data-pin="' + esc(u.username) + '">Send code</button>';
           acts += '<button class="btn ghost sm" data-email="' + esc(u.username) + '">Email</button>';
           if (!me) acts += '<button class="btn ' + (u.active ? 'danger' : 'ghost') + ' sm" data-act="' + esc(u.username) + '" data-on="' + (u.active ? '0' : '1') + '">' + (u.active ? 'Disable' : 'Enable') + '</button>';
           if (isMaster() && !me && u.role !== 'master') acts += '<button class="btn ghost sm" data-role="' + esc(u.username) + '" data-to="' + (u.role === 'admin' ? 'user' : 'admin') + '">' + (u.role === 'admin' ? 'Make user' : 'Make admin') + '</button>';
@@ -763,9 +795,9 @@ async function loadUsers() {
     box.querySelectorAll('[data-pin]').forEach(b => {
       b.onclick = async () => {
         const u = byName[b.dataset.pin];
-        if (!(await confirmBox('Send PIN', 'Email a new 6-digit PIN to ' + u.username + (u.email ? ' (' + u.email + ')' : '') +
-          ' so they can set a new password? Their current password keeps working until they do. This also clears a "too many attempts" lock.', 'Send PIN'))) return;
-        try { const x = await api('sendPin', { username: u.username }); showPin('PIN sent', x); loadUsers(); } catch (err) { toast(err.message, 'bad'); }
+        if (!(await confirmBox('Send code', 'Email a new 6-digit code to ' + u.username + (u.email ? ' (' + u.email + ')' : ' (no email on file — the code will be shown to you)') +
+          ' so they can set a new password? Their current password keeps working until they do. This also clears a "too many attempts" lock.', 'Send code'))) return;
+        try { const x = await api('sendPin', { username: u.username }); showPin('Code sent', x); loadUsers(); } catch (err) { toast(err.message, 'bad'); }
       };
     });
     box.querySelectorAll('[data-email]').forEach(b => { b.onclick = () => editEmail(b.dataset.email, byName[b.dataset.email].email); });
@@ -790,11 +822,11 @@ async function loadUsers() {
 /* ---------------- admin: audit ---------------- */
 const ACTION_LABEL = {
   login: 'Signed in', loginFailed: 'Failed sign-in', logout: 'Signed out', changePassword: 'Changed password',
-  setPasswordWithPin: 'Set password with PIN', pinRequested: 'Requested a PIN by email', pinRequestIgnored: 'PIN request ignored',
-  pinFailed: 'Wrong PIN', sendPin: 'Sent a PIN', resetPassword: 'Reset password', addUser: 'Created user',
+  setPasswordWithPin: 'Set password with code', pinRequested: 'Requested a code by email', pinRequestIgnored: 'Code request refused',
+  pinFailed: 'Wrong code', sendPin: 'Sent a code', resetPassword: 'Reset password', addUser: 'Created user',
   activateUser: 'Enabled user', deactivateUser: 'Disabled user', setRole: 'Changed role', setEmail: 'Changed email',
   addRow: 'Added record', upload: 'Uploaded file', deleteRow: 'Deleted record', deleteBatch: 'Deleted upload',
-  createFirstAdmin: 'Master admin set up', resetAdminPassword: 'Master admin PIN issued', emailFailed: 'Email failed'
+  createFirstAdmin: 'Master admin set up', resetAdminPassword: 'Master admin code issued', emailFailed: 'Email failed'
 };
 
 async function viewAudit(main) {
@@ -803,7 +835,7 @@ async function viewAudit(main) {
       : 'Actions by regular users (latest 500 matching entries). Administrator activity is visible to the master administrator.') + '</p>' +
     '<div class="card"><div class="row"><select id="aUser" style="max-width:240px"><option value="">All users</option></select>' +
     '<select id="aKind" style="max-width:240px"><option value="">All activity</option><option value="signin">Sign-ins &amp; sign-outs</option>' +
-    '<option value="access">Passwords &amp; PINs</option><option value="users">User management</option><option value="data">Data entry &amp; deletions</option></select>' +
+    '<option value="access">Passwords &amp; codes</option><option value="users">User management</option><option value="data">Data entry &amp; deletions</option></select>' +
     '<span class="spacer"></span><span class="muted" id="aCnt"></span><button class="btn ghost" id="aExp">Export CSV</button></div>' +
     '<div class="tbl-wrap" style="margin-top:12px" id="aList"><p class="muted" style="padding:14px">Loading…</p></div></div>';
   const userSel = $('#aUser'), kindSel = $('#aKind');
@@ -836,7 +868,12 @@ async function viewAudit(main) {
 
 /* ---------------- start ---------------- */
 (async function start() {
-  if (!S.token) { showLogin(); if (location.hash === '#pin') showPinForm(true); return; }
+  if (!S.token) {
+    showLogin();
+    if (location.hash === '#code' || location.hash === '#pin') showPinForm(true, 'code');
+    else if (location.hash === '#setup') showPinForm(true, 'setup');
+    return;
+  }
   try { const r = await api('me'); S.user = r.user; S.modules = r.modules; enterApp(); }
   catch (e) { signOutLocal(); }
 })();
